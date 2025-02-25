@@ -1,46 +1,22 @@
 from discord import app_commands, ui
-from discord.ext import app_commands
-from dotenv import load_dotenv
-import discord, asyncio, json, os
+from discord.ext import commands
+from ui_utils import Register, ConfirmAlt
+import discord, asyncio, json
 
-from models import User, Channel
-
-load_dotenv()
-
-HELP_MSG = """# Spellr Character Profile Template:
-
-```
-# Display Name
--# @Username
--# :round_pushpin: Ur Dad's House � :link: your.link � :balloon: Born Month DD, YYYY � :calendar_spiral: Joined Month YYYY
--# **XXX** Following � **XXXX** Followers
-```
-
-# Spellr Post Template:
-
-```
-**Display Name**
--# @Username
-Your text here
-```"""
+from models import User, Channel, Account
 
 class FeedCog(commands.Cog):
     def __init__(self, client, session):
         self.client = client
-        self.session_ = session_
+        self.session_ = session
     
-    @app_commands.command(name="help")
-    @app_commands.describe(style="Get Help with Using Spellr")
-    async def help(self, interaction: discord.Interaction):
-        await interaction.response.send_message(HELP_MSG)
-    
+    @commands.has_permissions(manage_channels=True)
     @app_commands.command(name="setup")
-    @app_commands.describe(style="Set Up a New Spellr Feed")
     async def setup(self, interaction: discord.Interaction):
         # check if the user has sufficient permissions
-        if(not interaction.user.guild_permissions.manage_guild):
-            await interaction.response.send_message("Insufficient permissions; you need the \"Manage Server\" permission to set up new Spellr feeds", ephemeral=True)
-            return
+        # if(not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.admin):
+        #     await interaction.response.send_message("Insufficient permissions; you need the \"Manage Server\" permission to set up new Spellr feeds", ephemeral=True)
+        #     return
         
         # check if this is avalid channel
         if(not isinstance(interaction.channel, discord.TextChannel)):
@@ -63,27 +39,61 @@ class FeedCog(commands.Cog):
             return
         
         # otherwise delete all the old messages and webhooks
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
+        safeid = await interaction.original_response()
         async for message in interaction.channel.history(limit=100, oldest_first=True):
+            if(message.id == safeid.id):
+                continue
             await message.delete()
-        async for webhook in interaction.channel.webhooks():
+        webhooks = await interaction.channel.webhooks()
+        for webhook in webhooks:
             await webhook.delete()
         
-        # order the posts in disparate threads and re-send them with webhooks
+        # delete other threads
         for thread in interaction.channel.threads:
             await thread.delete()
+        
+        await interaction.followup.send("New Spellr feed created.", ephemeral=True)
     
     @app_commands.command(name="register")
-    @app_commands.describe(style="Set Up a New Spellr Feed")
     async def register(self, interaction: discord.Interaction):
         # check if this isn't a db_channel
         db_channel = self.session_.get(Channel, interaction.channel.id)
         if(not db_channel):
-            await interaction.response.send_message("This channel is not a Spellr feed. Use /setup to set one up!")
+            await interaction.response.send_message("This channel is not a Spellr feed. Use /setup to set one up!", ephemeral=True)
             return
         
-        # check if the user is already registered here
-        user_in_feed = self.session.query(Account).filter_by(discord_userid=interaction.user.id)
-        if(user_in_feed):
-            await interaction.response.send_message("You already have an account in this feed. Alt accounts coming soon (tm).")
+        await interaction.response.send_modal(Register(session=self.session_))
+    
+    @app_commands.command(name="display")
+    async def display(self, interaction: discord.Interaction, display_name: str):
+        await interaction.response.defer()
+
+        if(display_name == ""):
+            await interaction.followup.send("Usage: `/display <new display name>`\n\nThen, you will be asked which account to change the display name of.", ephemeral=True)
             return
+        
+        if(len(display_name) > 32):
+            await interaction.followup.send("Display name too long; max 32 characters.", ephemeral=True)
+            return
+
+        channelid = interaction.channel.id
+        userid = interaction.user.id
+        db_accounts = self.session_.query(Account).filter_by(channelid=channelid, userid=userid).all()
+        if(not db_accounts):
+            await interaction.followup.send("You don't have any registered accounts in this feed to change.", ephemeral=True)
+            return
+        
+        if(len(db_accounts) == 1):
+            db_accounts[0].display_name = display_name
+            try:
+                self.session_.add(db_accounts[0])
+                self.session_.commit()
+            except:
+                await interaction.followup.send("Unable to change display name.", ephemeral=True)
+                return
+            await interaction.followup.send(f"Display name changed to {display_name}")
+            return
+        
+        options = 
+        view = discord.ui.Select(placeholder="Select an account to change display name...", min_values=1, max_values=1, options=[discord.SelectOption(label=label, description=description, emoji=emoji) for option in options])
