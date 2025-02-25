@@ -87,5 +87,3 @@ class FeedCog(commands.Cog):
         if(user_in_feed):
             await interaction.response.send_message("You already have an account in this feed. Alt accounts coming soon (tm).")
             return
-        
-
