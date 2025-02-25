@@ -173,10 +173,16 @@ class Register(discord.ui.Modal):
         )
         await spells_thread.send("Spells message")
 
-        await interaction.response.send_message("Registered :inverted_upload:1343858469924503582:", ephemeral=True)
+        await interaction.response.send_message("Registered", ephemeral=True)
 
-class Dropdown(discord.ui.Select):
-    def __init__(self, options):
-        options = [discord.SelectOption(label=label, description=description, emoji=emoji) for option in options]
+class AccountDropdown(discord.ui.Select):
+    def __init__(self, accounts, session):
+        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", emoji="") for account in accounts]
+        self.session_ = session
 
         super().__init__(placeholder="Select an account to change display name...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        db_user = self.session_.get(Account,)
+        await interaction.followup.send("")

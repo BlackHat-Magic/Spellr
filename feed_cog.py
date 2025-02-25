@@ -1,6 +1,6 @@
 from discord import app_commands, ui
 from discord.ext import commands
-from ui_utils import Register, ConfirmAlt
+from ui_utils import Register, AccountDropdown
 import discord, asyncio, json
 
 from models import User, Channel, Account
@@ -95,5 +95,25 @@ class FeedCog(commands.Cog):
             await interaction.followup.send(f"Display name changed to {display_name}")
             return
         
-        options = 
-        view = discord.ui.Select(placeholder="Select an account to change display name...", min_values=1, max_values=1, options=[discord.SelectOption(label=label, description=description, emoji=emoji) for option in options])
+        view = AccountDropdown(db_accounts)
+
+        await interaction.followup.send("", view=view, ephemeral=True)
+
+    @app_commands.command(name="handle")
+    async def display(self, interaction: discord.Interaction, handle: str):
+        await interaction.response.defer(ephemeral=True)
+
+        if(handle == ""):
+            await interaction.followup.send("Usage: `/handle <new account handle>`\n\nThen, you will be asked which account to change the handle of", ephemeral=True)
+            return
+        
+        if(len(handle) > 32):
+            await interaction.followup.send("`Handle too long; max 32 characters.`", ephemeral=True)
+            return
+
+        channelid = interaction.channel.id
+        userid = interaction.user.id
+        db_accounts = self.session_.query(Account).filter_by(channelid=channelid, userid=userid).all()
+        if(not db_accounts):
+            await interaction.followup.send("You don't have any registered accounts in this feed to change.", ephemeral=True)
+            return
