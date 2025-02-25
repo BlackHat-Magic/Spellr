@@ -75,7 +75,7 @@ class Register(discord.ui.Modal, title="Register a Spellr Account"):
         
         profile_thread = interaction.channel.create_thread(
             name=f"{new_account.display_name}'s Profile",
-            message=
+            message=PROFILE_MESSAGE_TEMPLATE.format()
         )
         spell_thread = interaction.channel.create_thread()
 
