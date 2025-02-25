@@ -25,9 +25,12 @@ class Account(Base):
     channel = relationship("Channels", back_populates="accounts")
 
     discord_userid = Column(Integer)
+    profile_threadid = Column(Integer)
+    spells_threadid = Column(Integer)
     
     handle = Column(String)
     display_name = Column(String)
+    bio = Column(String)
     def update_tweet_num():
         pass
 
