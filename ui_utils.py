@@ -2,27 +2,26 @@ import discord, random
 
 from models import Channel, User, Account
 
-PROFILE_MESSAGE_TEMPLATE = """# {display}
--# @{handle}
-{bio}
--# :round_pushpin: {location} :link: {website} :balloon: Born {month} {day}, {year} :calendar_spiral: Joined {joinedm} {joinedy}
--# **{following}** Following **{followers}** Followers"""
+ADJECTIVES = ["witty", "misty", "abusive", "real", "competitive", "careful", "gaping", "assorted", "bloody", "ill-informed", "rightful", "snobbish", "tight", "clever", "forgetful", "plastic", "hateful", "decent", "ten", "amusing", "tightfisted", "wiggly", "hypnotic", "offbeat", "better", "changeable", "wary", "ethereal", "draconian", "unadvised", "inner", "shiny", "flippant", "mundane", "worthless", "lowly", "bustling", "abashed", "complete", "wasteful", "malicious", "willing", "dramatic", "swanky", "obviously", "tender", "robust", "suspicious", "fixed", "dizzy"]
 
-def format_profile_message(account):
-    response = f"# {account.display_name}"
-    response += f"\n-# @{account.handle}"
-    response += f"\n{account.bio}"
-    response += f"\n"
+NOUNS = ["refrigerator", "phone", "garbage", "writing", "marketing", "death", "assistant", "story", "software", "committee", "improvement", "tension", "variation", "competition", "road", "driver", "feedback", "length", "judgment", "departure", "mixture", "difference", "media", "philosophy", "inflation", "disk", "assignment", "president", "property", "data", "accident", "lab", "association", "confusion", "mud", "patience", "warning", "artisan", "error", "wedding", "apple", "person", "promotion", "ratio", "advertising", "cell", "army", "satisfaction", "music", "midnight"]
+
+def random_username():
+    adjective = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
+    username = adjective.capitalize()
+    number = random.randint(0, 99)
+    if(random.randint(0, 1)):
+        username += str(number)
+        username += "-"
+        username += noun.capitalize()
+    else:
+        username += "-"
+        username += noun.capitalize()
+        username += str(number)
+    return(username, adjective, noun, number)
 
 class Register(discord.ui.Modal):
-    # handle = discord.ui.TextInput(
-    #     label="Handle",
-    #     placeholder="@ZacDorothy",
-    #     required=True,
-    #     max_length=32
-    # )
-    # async def on_submit(self, interaction: discord.Interaction):
-    #     await interaction.response.send_message(self.handle.value)
     def __init__(self, session, *args, **kwargs):
         super().__init__(title="Register a Spellr Account")
         self.session = session
@@ -65,29 +64,39 @@ class Register(discord.ui.Modal):
         
     
     def get_bday(self):
-        if(self.children[1].value):
+        if(not self.children[1].value):
+            return((0, 0, 0))
+        try:
             dob = self.children[1].value.split("/")
-            if(len(dob) == 3):
-                bmonth = dob[0]
-                bday = dob[1]
-                byear = dob[2]
-            else:
-                bmonth = bday = byear = 0
-        else:
-            bmonth = bday = byear = 0
-        return(bmonth, bday, byear)
+            bmonth = int(dob[0])
+            bday = int(dob[1])
+            byear = int(dob[2])
+            if(bmonth < 1 or bmonth > 12):
+                return((0, 0, 0))
+            if(bday < 1):
+                return((0, 0, 0))
+            if(bmonth in [1, 3, 5, 7, 8, 10, 12] and bday > 31):
+                return((0, 0, 0))
+            if(bmonth in [4, 6, 9, 11] and bday > 30):
+                return((0, 0, 0))
+            if(bmonth == 2 and bday > 29):
+                return((0, 0, 0))
+            return((bmonth, bday, byear))
+        except:
+            return((0, 0, 0))
     
     def get_jday(self):
-        if(self.children[2].value):
+        if(not self.children[2].value):
+            return((0, 0))
+        try:
             doj = self.children[2].value.split("/")
-            if(len(doj) == 2):
-                jmonth = doj[0]
-                jyear = doj[1]
-            else:
-                jmonth = jyear = 0
-        else:
-            jmonth = jyear = 0
-        return(jmonth, jyear)
+            jmonth = doj[0]
+            jyear = doj[1]
+            if(jmonth > 12 or jmonth < 1):
+                return((0, 0))
+            return((jmonth, jyear))
+        except:
+            return((0, 0))
 
     def get_followage(self):
         if(not self.children[3].value):
@@ -108,6 +117,15 @@ class Register(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         handle = self.children[0].value
+        adjective = noun = number = None
+        for character in handle:
+            if(not character.isalnum() and character not in ["-", "_"]):
+                handle, adjective, noun, number = random_username()
+        if(adjective is None):
+            display_name = handle
+        else:
+            display_name = f"{adjective.capitalize()} {noun.capitalize()}"
+        handle = handle.casefold()
         bmonth, bday, byear = self.get_bday()
         jmonth, jyear = self.get_jday()
         following, followers = self.get_followage()
@@ -121,31 +139,28 @@ class Register(discord.ui.Modal):
         # verify account
         db_account = self.session.query(Account).filter_by(channel=db_channel, handle=handle).first()
         if(db_account):
-            await interaction.response.send_message("Account with that username already exists. Pick another username.", ephemeral=True)
+            await interaction.response.send_message("Account with that handle already exists. Pick handle username.", ephemeral=True)
             return
         
         # identify or create user
         db_user = self.session.get(User, interaction.user.id)
         if(not db_user):
             db_user = User(
-                id = interaction.user.id
+                id=interaction.user.id
             )
             self.session.add(db_user)
-            try:
-                self.session.commit()
-            except:
-                await interaction.response.send_message("Failed to register account.", ephemeral=True)
-                return
+            self.session.commit()
 
         # create account
         new_account = Account(
+            user=db_user,
             channel=db_channel,
             discord_userid=interaction.user.id,
             handle=handle.casefold(),
-            display_name=handle,
+            display_name=display_name,
             bio="",
             location="",
-            website=f"spellr.gg/@{handle.casefold()}",
+            website=f"spellr.gg/@{handle}",
             bmonth=bmonth,
             bday=bday,
             byear=byear,
@@ -154,35 +169,124 @@ class Register(discord.ui.Modal):
             following=following,
             followers=followers
         )
-        self.session.add(new_account)
-        try:
-            self.session.commit()
-        except:
-            await interaction.response.send_message("Failed to register account.", ephemeral=True)
-            return
-        
         profile_thread = await interaction.channel.create_thread(
             name=f"{new_account.display_name}'s Profile",
             auto_archive_duration=10080,
             
         )
-        await profile_thread.send("Profile Message")
+        profile_message = await profile_thread.send(new_account.print_profile())
+        new_account.profile_threadid = profile_thread.id
+        new_account.profile_messageid = profile_message.id
+
+
         spells_thread = await interaction.channel.create_thread(
             name=f"{new_account.display_name}'s Spells",
             auto_archive_duration=10080
         )
-        await spells_thread.send("Spells message")
+        new_account.spells_threadid = spells_thread.id
+        self.session.add(new_account)
+        self.session.commit()
 
-        await interaction.response.send_message("Registered", ephemeral=True)
+        response_message = "Registered.\n\nUse `/update_profile` to update your Display Name, Handle, Bio, or Location"
+        if(adjective != None):
+            response_message += '\n\nHandles must only be alphanumeric characters (a-z, A-Z, 0-9), dashes ("-") and underscores ("_") are allowed. You have been assigned a random handle. Use `/update_profile` to set it yourself.\n\nUse `/following` and `/followers` to update following and followers count, respectively.'
+        if(any([bmonth == 0, bday == 0, byear == 0])):
+            response_message += "\n\nInvalid birthday specified. Use `/birthday` to correct it."
+        if(jmonth == 0 or jyear == 0):
+            response_message += "\n\nInvalid join date specified. Use `/join_date` to correct it."
+        await interaction.response.send_message(response_message, ephemeral=True)
 
 class AccountDropdown(discord.ui.Select):
-    def __init__(self, accounts, session):
-        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", emoji="") for account in accounts]
+    def __init__(self, accounts, session, what, new_value):
+        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(accounts)]
         self.session_ = session
+        self.accounts = accounts
+        self.what = what
+        self.what_name = what.replace("_", " ")
+        self.new_value = new_value
 
-        super().__init__(placeholder="Select an account to change display name...", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder=f"Account to change {self.what_name}...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        db_user = self.session_.get(Account,)
-        await interaction.followup.send("")
+        target_account = self.values[0]
+        db_account = self.accounts[int(target_account)]
+        if(target_account is None or not db_account):
+            await interaction.followup.send(f"Unable to change {self.what_name}.", ephemeral=True)
+            return
+        old_handle = db_account.handle
+        
+        setattr(db_account, self.what.replace(" ", "_"), self.new_value)
+        self.session_.add(db_account)
+        self.session_.commit()
+        await db_account.update(interaction)
+        await interaction.followup.send(f"Changed @{old_handle}'s {self.what_name} to {self.new_value}.", ephemeral=True)
+
+class DOBDropdown(discord.ui.Select):
+    def __init__(self, accounts, session, bday, bmonth, byear):
+        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(accounts)]
+        self.session_ = session
+        self.accounts = accounts
+        self.bday = bday
+        self.bmonth = bmonth
+        self.byear = byear
+
+        super().__init__(placeholder=f"Select an account to change date of birth...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        target_account = self.values[0]
+        db_account = self.accounts[int(target_account)]
+        if(target_account is None or not db_account):
+            await interaction.followup.send(f"Unable to change date of birth.", ephemeral=True)
+            return
+        
+        bday, bmonth, byear = self.bday, self.bmonth, self.byear
+
+        if(bday < 1):
+            await interaction.followup.send(f"Invalid birth day; must be at least 1.", ephemeral=True)
+            return
+        if(bmonth in [1, 3, 5, 7, 8, 10, 12] and bday > 31):
+            await interaction.followup.send(f"Chosen month only has 31 days; pick a day between 1 and 31.")
+            return
+        if(bmonth in [4, 6, 9, 11] and bday > 30):
+            await interaction.followup.send(f"Chosen month only has 30 days; pick a day between 1 and 30")
+            return
+        if(bmonth == 2 and bday > 29):
+            await interaction.followup.send(f"February only has 28-29 days; pick a day between 1 and 29")
+            return
+        
+        db_account.bday = self.bday
+        db_account.bmonth = self.bmonth
+        db_account.byear = self.byear
+        self.session_.add(db_account)
+        self.session_.commit()
+        await db_account.update(interaction)
+
+        await interaction.followup.send(f"Changed @{db_account.handle}'s date of birth to {self.bmonth} {self.bday}, {self.byear}.", ephemeral=True)
+
+class JoinDateDropdown(discord.ui.Select):
+    def __init__(self, accounts, session, jmonth, jyear):
+        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(accounts)]
+        self.session_ = session
+        self.accounts = accounts
+        self.jmonth = jmonth
+        self.jyear = jyear
+
+        super().__init__(placeholder=f"Select an account to change join date...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        target_account = self.values[0]
+        db_account = self.accounts[int(target_account)]
+        if(target_account is None or not db_account):
+            await interaction.followup.send(f"Unable to change date of birth.", ephemeral=True)
+            return
+        
+        db_account.jmonth = self.jmonth
+        db_account.jyear = self.jyear
+        self.session_.add(db_account)
+        self.session_.commit()
+        await db_account.update(interaction)
+
+        await interaction.followup.send(f"Changed @{db_account.handle}'s join date to {self.jmonth} {self.jyear}.", ephemeral=True)
