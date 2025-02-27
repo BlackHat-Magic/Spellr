@@ -1,4 +1,4 @@
-from ui_utils import Register, AccountDropdown, DOBDropdown, JoinDateDropdown, CastModal, SpellButton, SpellButtonsDropdown
+from ui_utils import Register, AccountDropdown, DOBDropdown, JoinDateDropdown, CastModal, SpellButton, SpellButtonsDropdown, CastDropdown
 from sqlalchemy.exc import SQLAlchemyError
 from discord import app_commands, ui
 from discord.ext import commands
@@ -112,7 +112,7 @@ class FeedCog(commands.Cog):
         
         # if user has multiple, we need a view
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.client.db_session, account_property, new_value))
+        view.add_item(AccountDropdown(db_accounts, account_property, new_value))
         await interaction.followup.send(f"Select an account to change {property_name}:", view=view, ephemeral=True)
     
     @app_commands.command(name="birthday")
@@ -160,7 +160,7 @@ class FeedCog(commands.Cog):
         
         # otherwise we need a view
         view = discord.ui.View()
-        view.add_item(DOBDropdown(db_accounts, self.client.db_session, birth_day, birth_month, birth_year))
+        view.add_item(DOBDropdown(db_accounts, birth_day, birth_month, birth_year))
         await interaction.followup.send("Select an account to change date of birth:", view=view)
     
     @app_commands.command(name="join_date")
@@ -201,7 +201,7 @@ class FeedCog(commands.Cog):
         
         # otherwise we need a view
         view = discord.ui.View()
-        view.add_item(JoinDateDropdown(db_accounts, self.client.db_session, join_month, join_year))
+        view.add_item(JoinDateDropdown(db_accounts, join_month, join_year))
         await interaction.followup.send("Select an account to change the join date:", view=view)
     
     @app_commands.command(name="following")
@@ -213,7 +213,7 @@ class FeedCog(commands.Cog):
 
         # make sure user has an account in this feed
         userid = interaction.user.id
-        db_accounts = self.client.db_session.query(Account).filter_by(channelid=channelid, userid=userid).all()
+        db_accounts = interaction.extras["db_accounts"]
         if(not db_accounts):
             await interaction.followup.send("You don't have any registered accounts in this feed to change. Use `/register` to register one.", ephemeral=True)
             return
@@ -230,7 +230,7 @@ class FeedCog(commands.Cog):
         
         #otherwise we need a view
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.client.db_session, "following", following))
+        view.add_item(AccountDropdown(db_accounts, "following", following))
         await interaction.followup.send("Select an account to change followage:", view=view, ephemeral=True)
     
     @app_commands.command(name="followers")
@@ -251,7 +251,7 @@ class FeedCog(commands.Cog):
             return
         
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.client.db_session, "followers", followers))
+        view.add_item(AccountDropdown(db_accounts, "followers", followers))
         await interaction.followup.send("Select an account to change followers:", view=view, ephemeral=True)
     
     @app_commands.command(name="cast")
@@ -263,7 +263,16 @@ class FeedCog(commands.Cog):
         if(len(db_accounts) == 1):
             await interaction.response.send_modal(CastModal())
             return
-        await interaction.response.send_modal(CastModal())
+
+        if(isinstance(interaction.channel, discord.Thread)):
+            matching_profile = interaction.client.db_session.query(Account).filter_by(profile_threadid=interaction.channel.id).first()
+            if(matching_profile and matching_profile.userid == interaction.user.id):
+                await interaction.response.send_modal(CastModal(accountid=matching_profile.id))
+                return
+        
+        view = discord.ui.View()
+        view.add_item(CastDropdown(db_accounts))
+        await interaction.response.send_message("Select an account to cast with:", view=view, ephemeral=True)
 
     @app_commands.command(name="register")
     async def register(self, interaction: discord.Interaction):

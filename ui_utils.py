@@ -89,12 +89,13 @@ class Register(discord.ui.Modal):
             return((0, 0))
         try:
             doj = self.children[2].value.split("/")
-            jmonth = doj[0]
-            jyear = doj[1]
+            jmonth = int(doj[0])
+            jyear = int(doj[1])
             if(jmonth > 12 or jmonth < 1):
                 return((0, 0))
             return((jmonth, jyear))
-        except:
+        except Exception as e:
+            print(e)
             return((0, 0))
 
     def get_followage(self):
@@ -144,11 +145,15 @@ class Register(discord.ui.Modal):
         # identify or create user
         db_user = interaction.client.db_session.get(User, interaction.user.id)
         if(not db_user):
-            db_user = User(
-                id=interaction.user.id
-            )
-            interaction.client.db_session.add(db_user)
-            interaction.client.db_session.commit()
+            try:
+                db_user = User(
+                    id=interaction.user.id
+                )
+                interaction.client.db_session.add(db_user)
+                interaction.client.db_session.commit()
+            except:
+                await interaction.response.send_message("Account creation failed. Try again later.", ephemeral=True)
+                return
 
         # create account
         new_account = Account(
@@ -193,8 +198,12 @@ class Register(discord.ui.Modal):
             type=discord.ChannelType.public_thread
         )
         new_account.spells_threadid = spells_thread.id
-        interaction.client.db_session.add(new_account)
-        interaction.client.db_session.commit()
+        try:
+            interaction.client.db_session.add(new_account)
+            interaction.client.db_session.commit()
+        except:
+            interaction.response.send_message("Account creation failed. Try again later.", ephemeral=True)
+            return
 
         async for message in interaction.channel.history(limit=10):
             if(message.type == discord.MessageType.thread_created):
@@ -218,7 +227,7 @@ class SpellButtonsDropdown(discord.ui.Select):
             channelid = interaction.channel.id
         else:
             channelid = interaction.channel.parent_id
-        self.accounts = session.query(Account).filter_by(userid=interaction.user.id, channelid=channelid).all()
+        self.accounts = interaction.client.db_session.query(Account).filter_by(userid=interaction.user.id, channelid=channelid).all()
 
         options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(self.accounts)]
 
@@ -293,7 +302,7 @@ class SpellButton(
             
             # otherwise we send them the appropriate account selection dropdown
             view = discord.ui.View()
-            view.add_item(ButtonsDropdown(interaction, self.action, self.castid))
+            view.add_item(SpellButtonsDropdown(interaction, self.action, self.castid))
             await interaction.response.send_message(f"Select an account to {self.action} with:", view=view, ephemeral=True)
         
         # liking
@@ -432,6 +441,7 @@ class CastModal(discord.ui.Modal):
             thread_embeds.append(embedded_reply)
 
             # add to thread message
+            print(db_recasting_spell.thread_messageid)
             edited_thread_message = await profile_webhook.edit_message(
                 db_recasting_spell.thread_messageid,
                 embeds=thread_embeds,
@@ -449,6 +459,7 @@ class CastModal(discord.ui.Modal):
 
             new_spell.thread_messageid = thread_message.id
             new_spell.feed_messageid = None
+            interaction.client.db_session.add(db_recasting_spell)
         elif(self.pondering):
             # get parent information
             content, embed = await format_ponder(db_user, interaction, self.children[0].value, new_spell, self.pondering)
@@ -516,6 +527,19 @@ class AccountDropdown(discord.ui.Select):
         await db_account.update(interaction)
         await interaction.followup.send(f"Changed @{old_handle}'s {self.what_name} to {self.new_value}.", ephemeral=True)
 
+class CastDropdown(discord.ui.Select):
+    def __init__(self, accounts):
+        options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(accounts)]
+        self.accounts=accounts
+
+        super().__init__(placeholder="Account to cast with...", min_values=1, max_values=1, options=options)
+    
+    async def callback(self, interaction: discord.Interaction):
+        target_account = self.values[0]
+        db_account = self.accounts[int(target_account)]
+
+        await interaction.response.send_modal(CastModal(accountid=db_account.id))
+
 class DOBDropdown(discord.ui.Select):
     def __init__(self, accounts, bday, bmonth, byear):
         options = [discord.SelectOption(label=account.display_name, description=f"@{account.handle}", value=i) for i, account in enumerate(accounts)]
@@ -556,7 +580,23 @@ class DOBDropdown(discord.ui.Select):
         interaction.client.db_session.commit()
         await db_account.update(interaction)
 
-        await interaction.followup.send(f"Changed @{db_account.handle}'s date of birth to {self.bmonth} {self.bday}, {self.byear}.", ephemeral=True)
+        month = [
+            None,
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+        ][self.bmonth]
+
+        await interaction.followup.send(f"Changed @{db_account.handle}'s date of birth to {month} {self.bday}, {self.byear}.", ephemeral=True)
 
 class JoinDateDropdown(discord.ui.Select):
     def __init__(self, accounts, jmonth, jyear):
@@ -581,4 +621,20 @@ class JoinDateDropdown(discord.ui.Select):
         interaction.client.db_session.commit()
         await db_account.update(interaction)
 
-        await interaction.followup.send(f"Changed @{db_account.handle}'s join date to {self.jmonth} {self.jyear}.", ephemeral=True)
+        month = [
+            None,
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+        ][self.jmonth]
+
+        await interaction.followup.send(f"Changed @{db_account.handle}'s join date to {month} {self.jyear}.", ephemeral=True)
