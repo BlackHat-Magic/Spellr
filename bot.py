@@ -2,8 +2,9 @@ from discord.ext import commands
 from feed_cog import FeedCog
 from dotenv import load_dotenv
 import discord, os, sys
+from ui_utils import SpellView
 
-from models import User, create_database
+from models import User, create_database, Spell
 
 load_dotenv()
 DISCORD_CLIENT_TOKEN = os.getenv("DISCORD_CLIENT_TOKEN")
@@ -24,7 +25,13 @@ async def on_ready():
             )
             session.add(new_user)
             session.commit()
-        await client.add_cog(FeedCog(client, session))
+        client.db_session = session
+        spells = session.query(Spell).all()
+        for spell in spells:
+            client.add_view(SpellView(spell.id, client, "thread"))
+            if(spell.feed_messageid):
+                client.add_view(SpellView(spell.id, client, "feed"))
+        await client.add_cog(FeedCog(client))
         synced = await client.tree.sync()
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:

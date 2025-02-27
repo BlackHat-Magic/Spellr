@@ -1,4 +1,4 @@
-from ui_utils import Register, AccountDropdown, DOBDropdown, JoinDateDropdown
+from ui_utils import Register, AccountDropdown, DOBDropdown, JoinDateDropdown, CastModal, SpellButton, SpellButtonsDropdown
 from sqlalchemy.exc import SQLAlchemyError
 from discord import app_commands, ui
 from discord.ext import commands
@@ -7,9 +7,8 @@ import discord, asyncio, json
 from models import User, Channel, Account
 
 class FeedCog(commands.Cog):
-    def __init__(self, client, session):
+    def __init__(self, client):
         self.client = client
-        self.session_ = session
         self._interaction_cache = {}
     
     def require_feed(self, interaction: discord.Interaction):
@@ -19,7 +18,7 @@ class FeedCog(commands.Cog):
             channelid = interaction.channel.parent_id
         else:
             raise app_commands.CheckFailure("Spellr feeds only supported in normal text channels; not others like forums or voice channels.")
-        db_channel = self.session_.get(Channel, channelid)
+        db_channel = self.client.db_session.get(Channel, channelid)
         if(not db_channel):
             raise app_commands.CheckFailure("This channel is not a Spellr feed. Use `/setup` to set one up!")
         interaction.extras["db_channel"] = db_channel
@@ -32,7 +31,7 @@ class FeedCog(commands.Cog):
         else:
             raise app_commands.CheckFailure("You don't have any registered accounts in this feed to change. Use `/register` to register one.")
         userid = interaction.user.id
-        db_accounts = self.session_.query(Account).filter_by(channelid=channelid, userid=interaction.user.id).all()
+        db_accounts = self.client.db_session.query(Account).filter_by(channelid=channelid, userid=interaction.user.id).all()
         if(not db_accounts):
             raise app_commands.CheckFailure("You don't have any registered accounts in this feed to change. Use `/register` to register one.")
         interaction.extras["db_accounts"] = db_accounts
@@ -46,15 +45,15 @@ class FeedCog(commands.Cog):
             return
 
         # check if this channel is already a spellr feed
-        db_channel = self.session_.get(Channel, interaction.channel.id)
+        db_channel = self.client.db_session.get(Channel, interaction.channel.id)
         if(db_channel):
             await interaction.response.send_message("Spellr already set up in this channel", ephemeral=True)
             return
         new_channel = Channel(
             id=interaction.channel.id
         )
-        self.session_.add(new_channel)
-        self.session_.commit()
+        self.client.db_session.add(new_channel)
+        self.client.db_session.commit()
         db_channel = new_channel
         
         # otherwise delete all the old messages and webhooks
@@ -105,15 +104,15 @@ class FeedCog(commands.Cog):
         db_accounts = interaction.extras["db_accounts"]
         if(len(db_accounts) == 1):
             setattr(db_accounts[0], account_property, new_value)
-            self.session_.add(db_accounts[0])
-            self.session_.commit()
+            self.client.db_session.add(db_accounts[0])
+            self.client.db_session.commit()
             await db_accounts[0].update(interaction)
             await interaction.followup.send(f"{property_name} changed to {new_value}")
             return
         
         # if user has multiple, we need a view
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.session_, account_property, new_value))
+        view.add_item(AccountDropdown(db_accounts, self.client.db_session, account_property, new_value))
         await interaction.followup.send(f"Select an account to change {property_name}:", view=view, ephemeral=True)
     
     @app_commands.command(name="birthday")
@@ -153,15 +152,15 @@ class FeedCog(commands.Cog):
             db_accounts[0].bday = birth_day
             db_accounts[0].bmonth = birth_month
             db_accounts[0].byear = birth_year
-            self.session_.add(db_accounts[0])
-            self.session_.commit()
+            self.client.db_session.add(db_accounts[0])
+            self.client.db_session.commit()
             await db_accounts[0].update(interaction)
             await interaction.followup.send("Date of birth updated.", ephemeral=True)
             return
         
         # otherwise we need a view
         view = discord.ui.View()
-        view.add_item(DOBDropdown(db_accounts, self.session_, birth_day, birth_month, birth_year))
+        view.add_item(DOBDropdown(db_accounts, self.client.db_session, birth_day, birth_month, birth_year))
         await interaction.followup.send("Select an account to change date of birth:", view=view)
     
     @app_commands.command(name="join_date")
@@ -194,15 +193,15 @@ class FeedCog(commands.Cog):
         if(len(db_accounts) == 1):
             db_accounts[0].jmonth = join_month
             db_accounts[0].jyear = join_year
-            self.session_.add(db_accounts[0])
-            self.session_.commit()
+            self.client.db_session.add(db_accounts[0])
+            self.client.db_session.commit()
             await db_accounts[0].update(interaction)
             await interaction.followup.send("Join date updated.", ephemeral=True)
             return
         
         # otherwise we need a view
         view = discord.ui.View()
-        view.add_item(JoinDateDropdown(db_accounts, self.session_, join_month, join_year))
+        view.add_item(JoinDateDropdown(db_accounts, self.client.db_session, join_month, join_year))
         await interaction.followup.send("Select an account to change the join date:", view=view)
     
     @app_commands.command(name="following")
@@ -214,7 +213,7 @@ class FeedCog(commands.Cog):
 
         # make sure user has an account in this feed
         userid = interaction.user.id
-        db_accounts = self.session_.query(Account).filter_by(channelid=channelid, userid=userid).all()
+        db_accounts = self.client.db_session.query(Account).filter_by(channelid=channelid, userid=userid).all()
         if(not db_accounts):
             await interaction.followup.send("You don't have any registered accounts in this feed to change. Use `/register` to register one.", ephemeral=True)
             return
@@ -223,15 +222,15 @@ class FeedCog(commands.Cog):
         db_accounts = interaction.extras["db_accounts"]
         if(len(db_accounts) == 1):
             db_accounts[0].following = following
-            self.session_.add(db_accounts[0])
-            self.session_.commit()
+            self.client.db_session.add(db_accounts[0])
+            self.client.db_session.commit()
             await db_accounts[0].update(interaction)
             await interaction.followup.send("Followage updated.", ephemeral=True)
             return
         
         #otherwise we need a view
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.session_, "following", following))
+        view.add_item(AccountDropdown(db_accounts, self.client.db_session, "following", following))
         await interaction.followup.send("Select an account to change followage:", view=view, ephemeral=True)
     
     @app_commands.command(name="followers")
@@ -245,14 +244,14 @@ class FeedCog(commands.Cog):
         db_accounts = interaction.extras["db_accounts"]
         if(len(db_accounts) == 1):
             db_accounts[0].followers = followers
-            self.session_.add(db_accounts[0])
-            self.session_.commit()
+            self.client.db_session.add(db_accounts[0])
+            self.client.db_session.commit()
             await db_accounts[0].update(interaction)
             await interaction.followup.send("Followers updated.", ephemeral=True)
             return
         
         view = discord.ui.View()
-        view.add_item(AccountDropdown(db_accounts, self.session_, "followers", followers))
+        view.add_item(AccountDropdown(db_accounts, self.client.db_session, "followers", followers))
         await interaction.followup.send("Select an account to change followers:", view=view, ephemeral=True)
     
     @app_commands.command(name="cast")
@@ -262,13 +261,14 @@ class FeedCog(commands.Cog):
 
         db_accounts = interaction.extras["db_accounts"]
         if(len(db_accounts) == 1):
-            await interaction.response.send_modal(CastModal(session=self.session_))
-        await interaction.response.send_modal(CastModal(session=self.session_))
+            await interaction.response.send_modal(CastModal())
+            return
+        await interaction.response.send_modal(CastModal())
 
     @app_commands.command(name="register")
     async def register(self, interaction: discord.Interaction):
         self.require_feed(interaction)
-        await interaction.response.send_modal(Register(session=self.session_))
+        await interaction.response.send_modal(Register())
     
     @commands.Cog.listener()
     async def on_command_error(self, interaction: discord.Interaction, error):
@@ -283,7 +283,7 @@ class FeedCog(commands.Cog):
             else:
                 await interaction.followup.send_message(error.args[0] if error.args else "Other ValueError while processing command.", ephemeral=True)
         elif(isinstance(error, SQLAlchemyError)):
-            self.session_.rollback()
+            self.client.db_session.rollback()
             if(interaction.response.is_done()):
                 await interaction.followup.send("Database error occurred; try again later.", ephemeral=True)
             else:
