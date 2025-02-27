@@ -254,6 +254,16 @@ class FeedCog(commands.Cog):
         view = discord.ui.View()
         view.add_item(AccountDropdown(db_accounts, self.session_, "followers", followers))
         await interaction.followup.send("Select an account to change followers:", view=view, ephemeral=True)
+    
+    @app_commands.command(name="cast")
+    async def cast(self, interaction: discord.Interaction):
+        self.require_feed(interaction)
+        self.require_account(interaction)
+
+        db_accounts = interaction.extras["db_accounts"]
+        if(len(db_accounts) == 1):
+            await interaction.response.send_modal(CastModal(session=self.session_))
+        await interaction.response.send_modal(CastModal(session=self.session_))
 
     @app_commands.command(name="register")
     async def register(self, interaction: discord.Interaction):
@@ -284,3 +294,15 @@ class FeedCog(commands.Cog):
             else:
                 await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
             raise error
+    
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if(message.type == discord.MessageType.channel_name_change and message.author == self.client.user):
+            try:
+                await message.delete()
+            except discord.Forbidden:
+                print("Bot lacks sufficient permissions.")
+            except discord.NotFound:
+                print("Message already deleted.")
+            except Exception as e:
+                print(e)

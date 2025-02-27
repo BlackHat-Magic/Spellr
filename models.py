@@ -49,7 +49,9 @@ class Account(Base):
     profile_threadid = Column(Integer)
     profile_messageid = Column(Integer)
     spells_threadid = Column(Integer)
+    webhookid = Column(Integer)
     
+    avatar_url = Column(String)
     display_name = Column(String)
     handle = Column(String)
     bio = Column(String)
@@ -62,12 +64,35 @@ class Account(Base):
     jyear = Column(Integer)
     following = Column(Integer)
     followers = Column(Integer)
+
+    casts = relationship("Cast", back_populates="author")
     
     async def update(self, interaction):
+        parent_feed = profile_thread.parent
+        profile_webhook = await interaction.client.fetch_webhook(self.webhookid)
         profile_thread = interaction.guild.get_thread(self.profile_threadid)
-        profile_message = await profile_thread.fetch_message(self.profile_messageid)
-        await profile_message.edit(content=self.print_profile())
+
+        # update the profile
+        await profile_webhook.edit_message(
+            self.profile_messageid, 
+            content=self.print_profile(), 
+            username=self.display_name, 
+            avatar_url=interaction.user.avatar.url,
+            thread=profile_thread
+        )
         await profile_thread.edit(name=f"{self.display_name}'s Profile")
+
+        # update each tweet
+        for cast in self.casts:
+            message_content = await interaction.client.fetch_message(cast.messageid).content
+            await profile_webhook.edit_message(
+                self.profile_messageid,
+                content=format_cast(message_content),
+                username=self.display_name,
+                avatar_url=interaction.user.avatar.url,
+                thread=profile_thread
+            )
+
 
     def print_profile(self):
         result = f"# {self.display_name}"
@@ -84,6 +109,21 @@ class Account(Base):
             result += f"<:joined:1344069033342927059> Joined {month_list[self.jmonth]} {self.jyear}"
         result += f"\n-# **{self.following}** Following | **{self.followers}** Followers"
         return(result)
+
+class Cast(Base):
+    __tablename__ = "casts"
+    id = Column(Integer)
+
+    accountid = Column(Integer, ForeignKey("accounts.id"))
+    author = relationship("Account", back_populates="casts")
+    messageid = Column(Integer)
+    likes = Column(Integer)
+    recasts = Column(Integer)
+
+    parentid = Column(Integer, ForeignKey("casts.id"), nullable=True)
+    parent = relationship("Cast", back_populates="replies")
+
+    replies = relationship("Cast", back_populates="parent")
 
 def create_database():
     database = create_engine(f"sqlite:///{DATABASE_NAME}")

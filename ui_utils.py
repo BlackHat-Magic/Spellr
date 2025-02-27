@@ -156,7 +156,7 @@ class Register(discord.ui.Modal):
             user=db_user,
             channel=db_channel,
             discord_userid=interaction.user.id,
-            handle=handle.casefold(),
+            handle=handle,
             display_name=display_name,
             bio="",
             location="",
@@ -167,16 +167,23 @@ class Register(discord.ui.Modal):
             jmonth=jmonth,
             jyear=jyear,
             following=following,
-            followers=followers
+            followers=followers,
+            avatar_url=interaction.user.avatar.url
         )
         profile_thread = await interaction.channel.create_thread(
             name=f"{new_account.display_name}'s Profile",
             auto_archive_duration=10080,
-            
         )
-        profile_message = await profile_thread.send(new_account.print_profile())
+        profile_webhook = await interaction.channel.create_webhook(name=f"{handle} Webhook", reason=f"Create Spellr posts for {handle}")
+        profile_message = await profile_webhook.send(
+            content=new_account.print_profile(), 
+            username=new_account.display_name, 
+            avatar_url=new_account.avatar_url, 
+            thread=profile_thread
+        )
         new_account.profile_threadid = profile_thread.id
         new_account.profile_messageid = profile_message.id
+        new_account.webhookid = profile_webhook.id
 
 
         spells_thread = await interaction.channel.create_thread(
@@ -195,6 +202,45 @@ class Register(discord.ui.Modal):
         if(jmonth == 0 or jyear == 0):
             response_message += "\n\nInvalid join date specified. Use `/join_date` to correct it."
         await interaction.response.send_message(response_message, ephemeral=True)
+
+class CastModal(discord.ui.Modal):
+    def __init__(self, session, accountid=None, *args, **kwargs):
+        super().__init__(title="Cast a spell!")
+        self.session_ = session
+        content = discord.ui.TextInput(
+            label="Spell Content",
+            style=discord.TextStyle.long,
+            placeholder="What's on your mind?",
+            required=True,
+            max_length=140,
+        )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if(isinstance(interaction.channel, discord.TextChannel)):
+            channelid = interaction.channel.id
+        elif(isinstance(interaction.channel, discord.Thread)):
+            channelid = interaction.channel.parent_id
+        else:
+            await interaction.followup.send("Spellr only supports threads and text channels; not forums, voice channels, or DMs.", ephemeral=True)
+            return
+        
+        if(accountid is None)
+            db_user = self.session_.query(Account).filter_by(userid=interaction.user.id, channelid=channelid).first()
+        else:
+            db_user = self.session_.get(Account, accountid)
+        if(not db_user):
+            await interaction.followup.send("You don't have any registered accounts in this feed. Use `/register` to register one.")
+            return
+
+        cast_message = await profile_webhook.send(
+            content=self.children[0].value,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            thread=db_user.thread
+        )
+        await interaction.response.send_message(f'Thanks for your feedback, {self.name.value}!', ephemeral=True)
 
 class AccountDropdown(discord.ui.Select):
     def __init__(self, accounts, session, what, new_value):
