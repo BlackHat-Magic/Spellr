@@ -327,7 +327,7 @@ class FeedCog(commands.Cog):
             return
         await interaction.response.send_modal(Register())
     
-    @commands.Cog.listener()
+    # @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if(isinstance(message.channel, discord.Thread)):
             # is this channel a feed?
