@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from dotenv import load_dotenv
@@ -59,7 +59,15 @@ async def format_ponder(db_account, interaction, text, new_spell, pondering):
     db_pondering_spell = interaction.client.db_session.get(Spell, pondering)
     if(not db_pondering_spell):
         raise discord.app_commands.CheckFailure("Unable to find spell to ponder.")
+    
+    while db_pondering_spell.pondering_to:
+        if(not db_pondering_spell.content):
+            db_pondering_spell = db_pondering_spell.pondering_to
+        else:
+            break
+
     pondering_channel = await interaction.client.fetch_channel(db_pondering_spell.author.profile_threadid)
+        
     pondering_profile = await pondering_channel.fetch_message(db_pondering_spell.author.profile_messageid)
     new_spell.pondering_to = db_pondering_spell
     
@@ -89,8 +97,13 @@ async def format_ponder(db_account, interaction, text, new_spell, pondering):
         url=pondering_profile_link,
         icon_url=db_pondering_spell.author.avatar_url
     )
-    ponder_preview.url = pondering_profile_link
+    ponder_preview.url = pondering_link
     ponder_preview.color = discord.Colour(0x2b2d31)
+    if(db_pondering_spell.pondering_to):
+        ponder_preview.set_footer(
+            text=f"Pondering {db_pondering_spell.pondering_to.author.display_name}",
+            icon_url=db_pondering_spell.pondering_to.author.avatar_url
+        )
     if(pondering_spell.attachments):
         ponder_preview.set_image(url=pondering_spell.attachments[0].url)
     
@@ -107,6 +120,7 @@ class Channel(Base):
     __tablename__ = "channels"
     id = Column(Integer, primary_key=True)
     accounts = relationship("Account", back_populates="channel")
+    webhookid = Column(Integer)
 
 class Account(Base):
     __tablename__ = "accounts"
@@ -122,7 +136,6 @@ class Account(Base):
     profile_threadid = Column(Integer)
     profile_messageid = Column(Integer)
     spells_threadid = Column(Integer)
-    webhookid = Column(Integer)
     
     avatar_url = Column(String)
     display_name = Column(String)
@@ -143,7 +156,7 @@ class Account(Base):
     async def update(self, interaction):
         profile_thread = interaction.guild.get_thread(self.profile_threadid)
         parent_feed = profile_thread.parent
-        profile_webhook = await interaction.client.fetch_webhook(self.webhookid)
+        profile_webhook = await interaction.client.fetch_webhook(self.channel.webhookid)
 
         # update the profile
         await profile_webhook.edit_message(
@@ -155,13 +168,19 @@ class Account(Base):
 
         # update each tweet
         for cast in self.spells:
-            await profile_webhook.edit_message(
-                self.profile_messageid,
-                content=await format_cast(self, cast.content, interaction.client),
+            edited_thread_message = await profile_webhook.edit_message(
+                spell.thread_messageid,
                 username=self.display_name,
                 avatar_url=self.avatar_url,
                 thread=profile_thread
             )
+            if(spell.feed_messageid):
+                edited_feed_message = await profile_webhook.edit_message(
+                    spell.feed_messageid,
+                    username=self.display_name,
+                    avatar_url=self.avatar_url,
+                )
+                spell.feed_messageid = edited_feed_message.id
 
 
     def print_profile(self):
@@ -187,8 +206,8 @@ class Spell(Base):
     author = relationship("Account", back_populates="spells")
 
     content = Column(String)
-    thread_messageid = Column(Integer)
-    feed_messageid = Column(Integer, nullable=True)
+    thread_messageid = Column(BigInteger)
+    feed_messageid = Column(BigInteger, nullable=True)
     charms = Column(Integer, default=0)
     scribes = Column(Integer, default=0)
     recasts = Column(Integer, default=0)

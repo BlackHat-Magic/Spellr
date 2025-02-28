@@ -21,6 +21,33 @@ def random_username():
         username += str(number)
     return(username, adjective, noun, number)
 
+def get_channelid(channel):
+    if(isinstance(channel, discord.TextChannel)):
+        return(channel.id)
+    else:
+        return(channel.parent_id)
+    
+def format_number(number):
+    order = 0
+    while (number > 1000):
+        number /= 1000
+        order += 1
+    order_list = [
+        "",
+        "K",
+        "M",
+        "B",
+        "T",
+        "Q",
+        "Qa",
+        "Sx",
+        "Sp",
+        "Oc",
+        "No",
+        "Dc"
+    ]
+    result = str(round(number, 1)) + order_list[order]
+
 class Register(discord.ui.Modal):
     def __init__(self, *args, **kwargs):
         super().__init__(title="Register a Spellr Account")
@@ -32,25 +59,25 @@ class Register(discord.ui.Modal):
         )
         bday = discord.ui.TextInput(
             label="Birthday (Optional)",
-            placeholder="MM/DD/YYYY (sorry)",
+            placeholder="MM/DD/YYYY",
             required=False,
             max_length=10
         )
         jday = discord.ui.TextInput(
             label="Account Creation (Optional)",
-            placeholder="MM/YYYY (sorry)",
+            placeholder="MM/YYYY",
             required=True,
             max_length=10
         )
         following = discord.ui.TextInput(
             label="Following (Optional)",
-            placeholder="0 people B)",
+            placeholder="0 people 😎",
             required=False,
             max_length=11
         )
         followers = discord.ui.TextInput(
             label="Followers (Optional)",
-            placeholder="Everyone B)",
+            placeholder="Everyone 😎",
             required=False,
             max_length=11
         )
@@ -116,6 +143,7 @@ class Register(discord.ui.Modal):
         return(following, followers)
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         handle = self.children[0].value
         adjective = noun = number = None
         for character in handle:
@@ -131,15 +159,16 @@ class Register(discord.ui.Modal):
         following, followers = self.get_followage()
 
         # verify channel
-        db_channel = interaction.client.db_session.get(Channel, interaction.channel.id)
+        channelid = get_channelid(interaction.channel)
+        db_channel = interaction.client.db_session.get(Channel, channelid)
         if(not db_channel):
-            await interaction.response.send_message("Spellr feed does not exist. Perhaps it was deleted while you were filling out the form?", ephemeral=True)
+            await interaction.followup.send("Spellr feed does not exist. Perhaps it was deleted while you were filling out the form?", ephemeral=True)
             return
         
         # verify account
         db_account = interaction.client.db_session.query(Account).filter_by(channel=db_channel, handle=handle).first()
         if(db_account):
-            await interaction.response.send_message("Account with that handle already exists. Pick handle username.", ephemeral=True)
+            await interaction.followup.send("Account with that handle already exists. Pick handle username.", ephemeral=True)
             return
         
         # identify or create user
@@ -152,7 +181,7 @@ class Register(discord.ui.Modal):
                 interaction.client.db_session.add(db_user)
                 interaction.client.db_session.commit()
             except:
-                await interaction.response.send_message("Account creation failed. Try again later.", ephemeral=True)
+                await interaction.followup.send("Account creation failed. Try again later.", ephemeral=True)
                 return
 
         # create account
@@ -174,13 +203,14 @@ class Register(discord.ui.Modal):
             followers=followers,
             avatar_url=interaction.user.avatar.url
         )
+        interaction.client.db_session.add(new_account)
         profile_thread = await interaction.channel.create_thread(
             name=f"{new_account.display_name}'s Profile",
             auto_archive_duration=10080,
             type=discord.ChannelType.public_thread
         )
-        profile_webhook = await interaction.channel.create_webhook(name=f"{handle} Webhook", reason=f"Create Spellr posts for {handle}")
-        profile_message = await profile_webhook.send(
+        channel_webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
+        profile_message = await channel_webhook.send(
             content=new_account.print_profile(), 
             username=new_account.display_name, 
             avatar_url=new_account.avatar_url, 
@@ -189,7 +219,6 @@ class Register(discord.ui.Modal):
         )
         new_account.profile_threadid = profile_thread.id
         new_account.profile_messageid = profile_message.id
-        new_account.webhookid = profile_webhook.id
 
 
         spells_thread = await interaction.channel.create_thread(
@@ -199,10 +228,10 @@ class Register(discord.ui.Modal):
         )
         new_account.spells_threadid = spells_thread.id
         try:
-            interaction.client.db_session.add(new_account)
             interaction.client.db_session.commit()
         except:
-            interaction.response.send_message("Account creation failed. Try again later.", ephemeral=True)
+            interaction.client.db_session.rollback()
+            interaction.response.send_message("Account creation failed. Try again later.", ephemeral=True, delete_after=15)
             return
 
         async for message in interaction.channel.history(limit=10):
@@ -216,7 +245,7 @@ class Register(discord.ui.Modal):
             response_message += "\n\nInvalid birthday specified. Use `/birthday` to correct it."
         if(jmonth == 0 or jyear == 0):
             response_message += "\n\nInvalid join date specified. Use `/join_date` to correct it."
-        await interaction.response.send_message(response_message, ephemeral=True)
+        await interaction.followup.send(response_message, ephemeral=True)
 
 class SpellButtonsDropdown(discord.ui.Select):
     def __init__(self, interaction, action, target):
@@ -237,11 +266,15 @@ class SpellButtonsDropdown(discord.ui.Select):
         target_account = self.values[0]
         db_account = self.accounts[int(target_account)]
 
-        if(self.action == "recast" or self.action == "ponder"):
-            await interaction.response.send_modal(CastModal(
-                accountid=db_account.id, 
-                recasting=self.target if self.action == "recast" else None,
-                pondering=self.target if self.action == "ponder" else None
+        if(self.action == "recast"):
+            await interaction.response.send_modal(RecastModal(
+                accountid=db_account.id,
+                recasting=self.target
+            ))
+        else:
+            await interaction.response.send_modal(PonderModal(
+                accountid=db_account.id,
+                pondering=self.target
             ))
 
 class SpellButton(
@@ -269,16 +302,16 @@ class SpellButton(
         action = match["action"]
         if(action == "recast"):
             emoji = "<:recast:1344069245918773288>"
-            label = str(len(spell.recasts))
+            label = format_number(len(spell.recasts))
         elif(action == "ponder"):
             emoji = "<:ponder:1344068886588555397>"
-            label = str(len(spell.ponders))
+            label = format_number(len(spell.ponders))
         elif(action == "charm"):
             emoji = "<:charm:1344068841973612644>"
-            label = str(spell.charms)
+            label = format_number(spell.charms)
         else:
             emoji = "<:scribe:1344068996387049614>"
-            label = str(spell.scribes)
+            label = format_number(spell.scribes)
         location = match["location"]
         return(cls(castid, action, emoji, location, label))
     
@@ -291,37 +324,87 @@ class SpellButton(
 
         #if user only has one account, relatively straightforward
         db_accounts = interaction.client.db_session.query(Account).filter_by(channelid=channelid, userid=interaction.user.id).all()
-        if(self.action == "recast" or self.action == "ponder"):
+
+        # recasting
+        if(self.action == "recast"):
             if(len(db_accounts) == 1):
-                await interaction.response.send_modal(CastModal(
-                    accountid=db_accounts[0].id, 
-                    recasting=self.castid if self.action == "recast" else None, 
-                    pondering=self.castid if self.action == "ponder" else None
-                ))
+                await interaction.response.send_modal(RecastModal(accountid=db_accounts[0].id, recasting=self.castid))
                 return
-            
-            # otherwise we send them the appropriate account selection dropdown
-            view = discord.ui.View()
-            view.add_item(SpellButtonsDropdown(interaction, self.action, self.castid))
-            await interaction.response.send_message(f"Select an account to {self.action} with:", view=view, ephemeral=True)
+            else:
+                # otherwise we send them the appropriate account selection dropdown
+                view = discord.ui.View()
+                view.add_item(SpellButtonsDropdown(interaction, self.action, self.castid))
+                await interaction.response.send_message(f"Select an account to {self.action} with:", view=view, ephemeral=True, delete_after=60)
+        
+        # pondering
+        if(self.action == "ponder"):
+            if(len(db_accounts) == 1):
+                await interaction.response.send_modal(PonderModal(accountid=db_accounts[0].id, pondering=self.castid))
+                return
+            else:
+                view = discord.ui.View()
+                view.add_item(SpellButtonsDropdown(interaction, self.action, self.castid))
+                await interaction.response.send_message(f"Select an account to {self.action} with:", view=view, ephemeral=True, delete_after=60)
         
         # liking
         if(self.action == "charm"):
-            cast = interaction.client.db_session.get(Cast, castid)
-            cast.charms += 1
-            interaction.client.db_session.add(cast)
+            spell = interaction.client.db_session.get(Spell, self.castid)
+            spell.charms += 1
+
+            # some stuff
+            webhook = await interaction.client.fetch_webhook(spell.author.channel.webhookid)
+            spell_thread = webhook.channel.get_thread(spell.author.profile_threadid)
+
+            # thread version of the message)
+            edited_thread_message = await webhook.edit_message(
+                spell.thread_messageid,
+                thread=spell_thread,
+                view=SpellView(spell.id, interaction.client, "thread")
+            )
+            spell.thread_messageid = edited_thread_message.id
+
+            # feed version of the message
+            if(spell.feed_messageid):
+                edited_feed_message = await webhook.edit_message(
+                    spell.feed_messageid,
+                    view=SpellView(spell.id, interaction.client, "feed")
+                )
+                spell.feed_messageid = edited_feed_message.id
+
+            # db commit
+            interaction.client.db_session.add(spell)
             interaction.client.db_session.commit()
-            self.item.label = str(int(self.label) + 1)
-            await interaction.message.edit(view=self.view)
+            await interaction.response.send_message("Charmed", ephemeral=True, delete_after=1)
         
         # bookmarking
         if(self.action == "scribe"):
-            cast = interaction.client.db_session.get(Spell, castid)
-            cast.scribes += 1
-            interaction.client.db_session.add(cast)
+            spell = interaction.client.db_session.get(Spell, self.castid)
+            spell.scribes += 1
+
+            # webhook
+            webhook = await interaction.client.fetch_webhook(spell.author.channel.webhookid)
+            spell_thread = webhook.channel.get_thread(spell.author.profile_threadid)
+
+            # thread version of the message
+            edited_thread_message = await webhook.edit_message(
+                spell.thread_messageid,
+                thread=spell_thread,
+                view=SpellView(spell.id, interaction.client, "thread")
+            )
+            spell.thread_messageid = edited_thread_message.id
+
+            # feed version of the message
+            if(spell.feed_messageid):
+                edited_feed_message = await webhook.edit_message(
+                    spell.feed_messageid,
+                    view=SpellView(spell.id, interaction.client, "feed")
+                )
+                spell.feed_messageid = edited_feed_message.id
+
+            # db commit
+            interaction.client.db_session.add(spell)
             interaction.client.db_session.commit()
-            self.item.label = str(int(self.label) + 1)
-            await interaction.message.edit(view=self.view)
+            await interaction.response.send_message("Scribed", ephemeral=True, delete_after=1)
 
 class SpellView(discord.ui.View):
     def __init__(self, castid, client, location):
@@ -362,13 +445,7 @@ class CastModal(discord.ui.Modal):
         await interaction.response.defer(ephemeral=True)
 
         # check channel
-        if(isinstance(interaction.channel, discord.TextChannel)):
-            channelid = interaction.channel.id
-        elif(isinstance(interaction.channel, discord.Thread)):
-            channelid = interaction.channel.parent_id
-        else:
-            await interaction.followup.send("Spellr only supports threads and text channels; not forums, voice channels, or DMs.", ephemeral=True)
-            return
+        channelid = get_channelid(interaction.channel)
         
         # get account
         if(self.accountid is None):
@@ -380,130 +457,299 @@ class CastModal(discord.ui.Modal):
             return
 
         # start sending message
-        profile_webhook = await interaction.client.fetch_webhook(db_user.webhookid)
+        db_channel = interaction.client.db_session.get(Channel, channelid)
+        webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
         profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
         new_spell = Spell(
             author=db_user,
             content=self.children[0].value,
         )
-        interaction.client.db_session.add(new_spell)
-        interaction.client.db_session.flush()
+        try:
+            interaction.client.db_session.add(new_spell)
+            interaction.client.db_session.flush()
+        except:
+            interaction.client.db_session.rollback()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
+            return
         # reply
-        if(self.recasting):
-            print("recasting")
-            content = await format_recast(db_user, interaction, self.children[0].value, new_spell, self.recasting)
+        content = await format_cast(db_user, self.children[0].value, interaction.client)
 
-            # get databse object of recasted spell
-            db_recasting_spell = interaction.client.db_session.get(Spell, self.recasting)
+        thread_message = await webhook.send(
+            content=content,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            thread=profile_thread,
+            wait=True,
+            view=SpellView(new_spell.id, interaction.client, "thread")
+        )
+        feed_message = await webhook.send(
+            content=content,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            wait=True,
+            view=SpellView(new_spell.id, interaction.client, "feed")
+        )
+        try:
+            new_spell.thread_messageid = thread_message.id
+            new_spell.feed_messageid = feed_message.id
+            interaction.client.db_session.commit()
+        except:
+            interaction.client.db_session.rollback()
+            await thread_message.delete()
+            await feed_message.delete()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
 
-            # get thread message of recasted spell
-            recast_from_thread = db_recasting_spell.author.profile_threadid
-            recast_thread_channel = await interaction.client.fetch_channel(recast_from_thread)
-            recast_thread_message = await recast_thread_channel.fetch_message(db_recasting_spell.thread_messageid)
-            thread_embeds = recast_thread_message.embeds
+class RecastModal(discord.ui.Modal):
+    def __init__(self, recasting: int, accountid=None, *args, **kwargs):
+        super().__init__(title="Recast a Spell!")
+        self.accountid = accountid
+        self.recasting = recasting
+        content = discord.ui.TextInput(
+            label=f"Recast Content",
+            style=discord.TextStyle.long,
+            placeholder="What's on your mind?",
+            required=True,
+            max_length=300,
+        )
+        attachment_url = discord.ui.TextInput(
+            label="Attachment URL (Optional)",
+            placeholder="https://awesomesite.com/my_image.png",
+            required=False,
+            max_length=1024
+        )
+        self.add_item(content)
+        self.add_item(attachment_url)
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
 
-            # get feed message of recasted spell
-            if(not db_recasting_spell.feed_messageid):
-                recast_feed_message = None
-            else:
-                recast_feed_channel = await interaction.client.fetch_channel(channelid)
-                recast_feed_message = await recast_feed_channel.fetch_message(db_recasting_spell.feed_messageid)
-            
-            # check that we can do this
-            if(len(thread_embeds) >= 10):
-                await interaction.followup.send("Too many replies on this spell (only 10 supported).", ephemeral=True)
-                return
+        # check channel
+        channelid = get_channelid(interaction.channel)
+        
+        # get account
+        if(self.accountid is None):
+            db_user = interaction.client.db_session.query(Account).filter_by(userid=interaction.user.id, channelid=channelid).first()
+        else:
+            db_user = interaction.client.db_session.get(Account, self.accountid)
+        if(not db_user):
+            await interaction.followup.send("You don't have any registered accounts in this feed. Use `/register` to register one.", ephemeral=True, delete_after=30)
+            return
 
-            # send the profile message
-            thread_message = await profile_webhook.send(
-                content=content,
-                username=db_user.display_name,
-                avatar_url=db_user.avatar_url,
-                thread=profile_thread,
-                wait=True,
-                view=SpellView(new_spell.id, interaction.client, "thread")
+        # screate spell object
+        db_channel = db_user.channel
+        webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
+        profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
+        new_spell = Spell(
+            author=db_user,
+            content=self.children[0].value,
+        )
+        try:
+            interaction.client.db_session.add(new_spell)
+            interaction.client.db_session.flush()
+        except:
+            interaction.client.db_session.rollback()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
+            return
+
+        # format the contents
+        content = await format_recast(db_user, interaction, self.children[0].value, new_spell, self.recasting)
+
+        # get recasted spell data
+        db_recasting_spell = interaction.client.db_session.get(Spell, self.recasting)
+        recast_from_thread = db_recasting_spell.author.profile_threadid
+        recast_thread_channel = await interaction.client.fetch_channel(recast_from_thread)
+        recast_thread_message = await recast_thread_channel.fetch_message(db_recasting_spell.thread_messageid)
+        thread_embeds = recast_thread_message.embeds
+
+        # get feed message of recasted spell
+        if(not db_recasting_spell.feed_messageid):
+            recast_feed_message = None
+        else:
+            recast_feed_channel = await interaction.client.fetch_channel(channelid)
+            recast_feed_message = await recast_feed_channel.fetch_message(db_recasting_spell.feed_messageid)
+        
+        # check that we can do this
+        if(len(thread_embeds) >= 10):
+            await interaction.followup.send("Too many replies on this spell (only 10 supported).", ephemeral=True, delete_after=15)
+            return
+
+        # send the profile message
+        thread_message = await webhook.send(
+            content=content,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            thread=profile_thread,
+            wait=True,
+            view=SpellView(new_spell.id, interaction.client, "thread")
+        )
+        new_spell.thread_messageid = thread_message.id
+
+        # reconstruct all embeds
+        embeds = []
+        if(db_recasting_spell.pondering_to):
+            _, pondering_embed = await format_ponder(db_user, interaction, "", db_recasting_spell, db_recasting_spell.pondering_id)
+            embeds.append(pondering_embed)
+        print(db_recasting_spell.recasts)
+        for i, recast in enumerate(db_recasting_spell.recasts):
+            from_channel = await interaction.client.fetch_channel(recast.author.profile_threadid)
+            print(recast.thread_messageid)
+            recast_message = await from_channel.fetch_message(recast.thread_messageid)
+            recast_profile = await from_channel.fetch_message(recast.author.profile_messageid)
+            embed = discord.Embed(
+                color=discord.Colour(0x00FFFF),
+                title=f"({i+1}) {recast.author.display_name}",
+                url=recast_message.jump_url,
+                description=recast.content
             )
-
-            # construct embed
-            db_user_profile = await profile_thread.fetch_message(db_user.profile_messageid)
-            db_user_url = db_user_profile.jump_url
-            embedded_reply = discord.Embed(
-                color=discord.Colour(0x0080FF), 
-                title=db_user.display_name, 
-                url=db_user_url,
-                description=self.children[0].value
-            )
-            embedded_reply.set_author(
-                name=f"@{db_user.handle}",
-                url=db_user_url,
+            embed.set_author(
+                name=f"@{recast.author.handle}",
+                url=recast_profile.jump_url,
                 icon_url=db_user.avatar_url
             )
-            thread_embeds.append(embedded_reply)
+            embeds.append(embed)
+        profile_message = await webhook.fetch_message(db_user.profile_messageid, thread=profile_thread)
+        embed = discord.Embed(
+            color=discord.Colour(0x00FFFF),
+            title=f"({len(db_recasting_spell.recasts)}) {db_user.display_name}",
+            url=thread_message.jump_url,
+            description=self.children[0].value
+        )
+        embed.set_author(
+            name=f"@{db_user.handle}",
+            url=profile_message.jump_url,
+            icon_url=db_user.avatar_url
+        )
+        embeds.append(embed)
 
-            # add to thread message
-            print(db_recasting_spell.thread_messageid)
-            edited_thread_message = await profile_webhook.edit_message(
-                db_recasting_spell.thread_messageid,
-                embeds=thread_embeds,
-                thread=profile_thread
+        # add to thread message
+        pondering_thread = await interaction.client.fetch_channel(db_recasting_spell.author.profile_threadid)
+        edited_thread_message = await webhook.edit_message(
+            db_recasting_spell.thread_messageid,
+            embeds=embeds,
+            thread=pondering_thread,
+            view=SpellView(db_recasting_spell.id, interaction.client, "thread")
+        )
+        db_recasting_spell.thread_messageid = edited_thread_message.id
+
+        # add to feed message
+        if(recast_feed_message):
+            edited_feed_message = await webhook.edit_message(
+                recast_feed_message.id,
+                embeds=embeds,
+                view=SpellView(db_recasting_spell.id, interaction.client, "feed")
             )
-            db_recasting_spell.thread_messageid = edited_thread_message.id
+            db_recasting_spell.feed_message_id = edited_feed_message.id
 
-            # add to feed message
-            if(recast_feed_message):
-                edited_feed_message = await profile_webhook.edit_message(
-                    recast_feed_message.id,
-                    embeds=thread_embeds
-                )
-                db_recasting_spell.feed_message_id = edited_feed_message.id
-
-            new_spell.thread_messageid = thread_message.id
-            new_spell.feed_messageid = None
+        try:
             interaction.client.db_session.add(db_recasting_spell)
-        elif(self.pondering):
-            # get parent information
-            content, embed = await format_ponder(db_user, interaction, self.children[0].value, new_spell, self.pondering)
+            interaction.client.db_session.commit()
+        except:
+            interaction.client.db_session.rollback()
+            await interaction.followup.send("A database error occurred. Please try again later. Note: this may have permanently corrupted recasts (replies) for the original spell (post).", ephemeral=True)
 
-            thread_message = await profile_webhook.send(
-                content=content,
-                username=db_user.display_name,
-                avatar_url=db_user.avatar_url,
-                thread=profile_thread,
-                wait=True,
-                view=SpellView(new_spell.id, interaction.client, "thread"),
-                embeds=[embed]
-            )
-            feed_message = await profile_webhook.send(
-                content=content,
-                username=db_user.display_name,
-                avatar_url=db_user.avatar_url,
-                wait=True,
-                view=SpellView(new_spell.id, interaction.client, "feed"),
-                embeds=[embed]
-            )
-            new_spell.thread_messageid = thread_message.id
-            new_spell.feed_messageid = feed_message.id
+class PonderModal(discord.ui.Modal):
+    def __init__(self, pondering: int, accountid=None, *args, **kwargs):
+        super().__init__(title="Ponder a Spell!")
+        self.accountid = accountid
+        self.pondering = pondering
+        content = discord.ui.TextInput(
+            label=f"Quote Ponder",
+            style=discord.TextStyle.long,
+            placeholder="What's on your mind? (Leave blank to just Ponder)",
+            required=False,
+            max_length=300,
+        )
+        attachment_url = discord.ui.TextInput(
+            label="Attachment URL (Optional)",
+            placeholder="https://awesomesite.com/my_image.png",
+            required=False,
+            max_length=1024
+        )
+        self.add_item(content)
+        self.add_item(attachment_url)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        # check channel
+        channelid = get_channelid(interaction.channel)
+
+        # get account
+        if(self.accountid is None):
+            db_user = interaction.client.db_session.query(Account).filter_by(userid=interaction.user.id, channelid=channelid).first()
         else:
-            content = await format_cast(db_user, self.children[0].value, interaction.client)
+            db_user = interaction.client.db_session.get(Account, self.accountid)
+        if(not db_user):
+            await interaction.followup.send("You don't have any registered accounts in this feed. Use `/register` to register one.", ephemeral=True, delete_after=30)
+            return
 
-            thread_message = await profile_webhook.send(
-                content=content,
-                username=db_user.display_name,
-                avatar_url=db_user.avatar_url,
-                thread=profile_thread,
-                wait=True,
-                view=SpellView(new_spell.id, interaction.client, "thread")
+        # screate spell object
+        db_channel = db_user.channel
+        webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
+        profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
+        new_spell = Spell(
+            author=db_user,
+            content=self.children[0].value,
+        )
+        try:
+            interaction.client.db_session.add(new_spell)
+            interaction.client.db_session.flush()
+        except:
+            interaction.client.db_session.rollback()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
+            return
+
+        # get parent information
+        content, embed = await format_ponder(db_user, interaction, self.children[0].value, new_spell, self.pondering)
+
+        thread_message = await webhook.send(
+            content=content,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            thread=profile_thread,
+            wait=True,
+            view=SpellView(new_spell.id, interaction.client, "thread"),
+            embeds=[embed]
+        )
+        feed_message = await webhook.send(
+            content=content,
+            username=db_user.display_name,
+            avatar_url=db_user.avatar_url,
+            wait=True,
+            view=SpellView(new_spell.id, interaction.client, "feed"),
+            embeds=[embed]
+        )
+
+        # update number button
+        db_pondering_spell = interaction.client.db_session.get(Spell, self.pondering)
+        while db_pondering_spell.pondering_to:
+            if(not db_pondering_spell.content):
+                db_pondering_spell = db_pondering_spell.pondering_to
+            else:
+                break
+        parent_channel = await interaction.client.fetch_channel(channelid)
+        pondering_thread = parent_channel.get_thread(db_pondering_spell.author.profile_threadid)
+        edited_thread_message = await webhook.edit_message(
+            db_pondering_spell.thread_messageid,
+            thread=pondering_thread,
+            view=SpellView(db_pondering_spell.id, interaction.client, "thread")
+        )
+        db_pondering_spell.threadid = edited_thread_message.id
+        if(db_pondering_spell.feed_messageid):
+            edited_feed_message = await webhook.edit_message(
+                db_pondering_spell.feed_messageid,
+                view=SpellView(db_pondering_spell.id, interaction.client, "feed")
             )
-            feed_message = await profile_webhook.send(
-                content=content,
-                username=db_user.display_name,
-                avatar_url=db_user.avatar_url,
-                wait=True,
-                view=SpellView(new_spell.id, interaction.client, "feed")
-            )
-            new_spell.thread_messageid = thread_message.id
-            new_spell.feed_messageid = feed_message.id
-        interaction.client.db_session.commit()
+            db_pondering_spell.feed_messageid = edited_feed_message.id
+
+        new_spell.thread_messageid = thread_message.id
+        new_spell.feed_messageid = feed_message.id
+
+        try:
+            interaction.client.db_session.add(db_pondering_spell)
+            interaction.client.db_session.commit()
+        except:
+            interaction.client.db_session.rollback()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
 
 class AccountDropdown(discord.ui.Select):
     def __init__(self, accounts, what, new_value):
@@ -525,7 +771,7 @@ class AccountDropdown(discord.ui.Select):
         interaction.client.db_session.add(db_account)
         interaction.client.db_session.commit()
         await db_account.update(interaction)
-        await interaction.followup.send(f"Changed @{old_handle}'s {self.what_name} to {self.new_value}.", ephemeral=True)
+        await interaction.followup.send(f"Changed @{old_handle}'s {self.what_name} to {self.new_value}.", ephemeral=True, delete_after=15)
 
 class CastDropdown(discord.ui.Select):
     def __init__(self, accounts):
@@ -561,16 +807,16 @@ class DOBDropdown(discord.ui.Select):
         bday, bmonth, byear = self.bday, self.bmonth, self.byear
 
         if(bday < 1):
-            await interaction.followup.send(f"Invalid birth day; must be at least 1.", ephemeral=True)
+            await interaction.followup.send(f"Invalid birth day; must be at least 1.", ephemeral=True, delete_after=15)
             return
         if(bmonth in [1, 3, 5, 7, 8, 10, 12] and bday > 31):
-            await interaction.followup.send(f"Chosen month only has 31 days; pick a day between 1 and 31.")
+            await interaction.followup.send(f"Chosen month only has 31 days; pick a day between 1 and 31.", delete_after=15)
             return
         if(bmonth in [4, 6, 9, 11] and bday > 30):
-            await interaction.followup.send(f"Chosen month only has 30 days; pick a day between 1 and 30")
+            await interaction.followup.send(f"Chosen month only has 30 days; pick a day between 1 and 30", delete_after=15)
             return
         if(bmonth == 2 and bday > 29):
-            await interaction.followup.send(f"February only has 28-29 days; pick a day between 1 and 29")
+            await interaction.followup.send(f"February only has 28-29 days; pick a day between 1 and 29", delete_after=15)
             return
         
         db_account.bday = self.bday
@@ -596,7 +842,7 @@ class DOBDropdown(discord.ui.Select):
             "December"
         ][self.bmonth]
 
-        await interaction.followup.send(f"Changed @{db_account.handle}'s date of birth to {month} {self.bday}, {self.byear}.", ephemeral=True)
+        await interaction.followup.send(f"Changed @{db_account.handle}'s date of birth to {month} {self.bday}, {self.byear}.", ephemeral=True, delete_after=15)
 
 class JoinDateDropdown(discord.ui.Select):
     def __init__(self, accounts, jmonth, jyear):
@@ -612,7 +858,7 @@ class JoinDateDropdown(discord.ui.Select):
         target_account = self.values[0]
         db_account = self.accounts[int(target_account)]
         if(target_account is None or not db_account):
-            await interaction.followup.send(f"Unable to change date of birth.", ephemeral=True)
+            await interaction.followup.send(f"Unable to change date of birth.", ephemeral=True, delete_after=15)
             return
         
         db_account.jmonth = self.jmonth
@@ -637,4 +883,4 @@ class JoinDateDropdown(discord.ui.Select):
             "December"
         ][self.jmonth]
 
-        await interaction.followup.send(f"Changed @{db_account.handle}'s join date to {month} {self.jyear}.", ephemeral=True)
+        await interaction.followup.send(f"Changed @{db_account.handle}'s join date to {month} {self.jyear}.", ephemeral=True, delete_after=15)
