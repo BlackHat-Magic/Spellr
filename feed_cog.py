@@ -331,8 +331,25 @@ class FeedCog(commands.Cog):
             return
         await interaction.response.send_modal(Register())
     
-    # @commands.Cog.listener()
+    @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # is this a channel we should even interact with
+        if(isinstance(message.channel, discord.Thread)):
+            db_channel = self.client.db_session.get(Account, message.channel.parent_id)
+        elif(isinstance(message.channel, discord.TextChannel)):
+            db_channel = self.client.db_session.get(Account, message.channel.id)
+        else:
+            return
+        if(not db_channel):
+            return
+        
+        # is this a webhook message
+        if(isinstance(message, discord.WebhookMessage)):
+            return
+        
+        await message.delete()
+
+        return
         if(isinstance(message.channel, discord.Thread)):
             # is this channel a feed?
             db_channel = self.client.db_session.get(Channel, message.channel.parent_id)
