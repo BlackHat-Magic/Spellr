@@ -1,5 +1,5 @@
 from io import BytesIO
-import discord, random, aiohttp, asyncio
+import discord, random, aiohttp, asyncio, re
 
 from models import Channel, User, Account, format_cast, Spell, format_recast, format_ponder
 
@@ -425,10 +425,10 @@ class CastModal(discord.ui.Modal):
         super().__init__(title="Cast a spell!")
         self.accountid = accountid
         content = discord.ui.TextInput(
-            label=f"Spell Content{' (Optional)' if self.pondering else ''}",
+            label=f"Spell Content",
             style=discord.TextStyle.long,
             placeholder="What's on your mind?",
-            required=(self.pondering == None),
+            required=True,
             max_length=300,
         )
         attachment_url = discord.ui.TextInput(
@@ -476,33 +476,57 @@ class CastModal(discord.ui.Modal):
         # file
         discord_file = None
         if(self.children[1].value):
-            async with self.client.http_session.get(self.children[1].value) as response:
+            async with interaction.client.http_session.get(self.children[1].value) as response:
+                print(self.children[1].value)
                 if(response.status == 200):
-                    image_bytes = BytesIO(await response.read())
+                    image_bytes = await response.read()
+
                     content_disposition = response.headers.get("Content-Disposition")
                     if(content_disposition and "filename=" in content_disposition):
                         filename = content_disposition.split("filename=")[-1].strip("\"")
                     else:
                         filename = "image.png"
-                    discord_file = discord.File(image_bytes, filename=filename)
-
-        thread_message = await webhook.send(
-            content=content.split("\u200b")[0],
-            username=db_user.display_name,
-            avatar_url=db_user.avatar_url,
-            thread=profile_thread,
-            wait=True,
-            view=SpellView(new_spell.id, interaction.client, "thread"),
-            file=discord_file
-        )
-        feed_message = await webhook.send(
-            content=content.split("\u200b")[0],
-            username=db_user.display_name,
-            avatar_url=db_user.avatar_url,
-            wait=True,
-            view=SpellView(new_spell.id, interaction.client, "feed"),
-            file=discord_file
-        )
+                    
+                    image_file = BytesIO(image_bytes)
+                    image_file.seek(0)
+                    
+                    discord_file = discord.File(BytesIO(image_file.getvalue()), filename=filename)
+                    # image_bytes.seek(0)
+                    discord_file2 = discord.File(BytesIO(image_file.getvalue()), filename=filename)
+        if(discord_file):
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread"),
+                file=discord_file
+            )
+            feed_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "feed"),
+                file=discord_file2
+            )
+        else:
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread"),
+            )
+            feed_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "feed"),
+            )
         try:
             new_spell.thread_messageid = thread_message.id
             new_spell.feed_messageid = feed_message.id
@@ -589,26 +613,42 @@ class RecastModal(discord.ui.Modal):
         # file
         discord_file = None
         if(self.children[1].value):
-            async with self.client.http_session.get(self.children[1].value) as response:
+            async with interaction.client.http_session.get(self.children[1].value) as response:
                 if(response.status == 200):
-                    image_bytes = BytesIO(await response.read())
+                    image_bytes = await response.read()
+
                     content_disposition = response.headers.get("Content-Disposition")
                     if(content_disposition and "filename=" in content_disposition):
                         filename = content_disposition.split("filename=")[-1].strip("\"")
                     else:
                         filename = "image.png"
-                    discord_file = discord.File(image_bytes, filename=filename)
+                    
+                    image_file = BytesIO(image_bytes)
+                    image_file.seek(0)
+                    
+                    discord_file = discord.File(BytesIO(image_file.getvalue()), filename=filename)
 
-        # send the profile message
-        thread_message = await webhook.send(
-            content=content.split("\u200b")[0],
-            username=db_user.display_name,
-            avatar_url=db_user.avatar_url,
-            thread=profile_thread,
-            wait=True,
-            view=SpellView(new_spell.id, interaction.client, "thread"),
-            file=discord_file
-        )
+        if(discord_file):
+            # send the profile message
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread"),
+                file=discord_file
+            )
+        else:
+            # send the profile message
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread")
+            )
         new_spell.thread_messageid = thread_message.id
 
         # reconstruct all embeds
@@ -616,7 +656,6 @@ class RecastModal(discord.ui.Modal):
         if(db_recasting_spell.pondering_to):
             _, pondering_embed = await format_ponder(db_user, interaction, "", db_recasting_spell, db_recasting_spell.pondering_id)
             embeds.append(pondering_embed)
-        print(db_recasting_spell.recasts)
         for i, recast in enumerate(db_recasting_spell.recasts):
             from_channel = await interaction.client.fetch_channel(recast.author.profile_threadid)
             recast_message = await from_channel.fetch_message(recast.thread_messageid)
@@ -632,7 +671,7 @@ class RecastModal(discord.ui.Modal):
                 url=recast_profile.jump_url,
                 icon_url=db_user.avatar_url
             )
-            if(len(db_pondering_spell.content.split("\u200b")) == 2):
+            if(len(db_recasting_spell.content.split("\u200b")) == 2):
                 embed.set_image(db_pondering_spell.content.split("\u200b")[1])
             embeds.append(embed)
         profile_message = await webhook.fetch_message(db_user.profile_messageid, thread=profile_thread)
@@ -647,7 +686,7 @@ class RecastModal(discord.ui.Modal):
             url=profile_message.jump_url,
             icon_url=db_user.avatar_url
         )
-        if(len(db_pondering_spell.content.split("\u200b")) == 2):
+        if(len(db_recasting_spell.content.split("\u200b")) == 2):
             embed.set_image(db_pondering_spell.content.split("\u200b")[1])
         embeds.append(embed)
 
@@ -735,35 +774,61 @@ class PonderModal(discord.ui.Modal):
         # file
         discord_file = None
         if(self.children[1].value):
-            async with self.client.http_session.get(self.children[1].value) as response:
+            async with interaction.client.http_session.get(self.children[1].value) as response:
                 if(response.status == 200):
-                    image_bytes = BytesIO(await response.read())
+                    image_bytes = await response.read()
+
                     content_disposition = response.headers.get("Content-Disposition")
                     if(content_disposition and "filename=" in content_disposition):
                         filename = content_disposition.split("filename=")[-1].strip("\"")
                     else:
                         filename = "image.png"
-                    discord_file = discord.File(image_bytes, filename=filename)
+                    
+                    image_file = BytesIO(image_bytes)
+                    image_file.seek(0)
 
-        thread_message = await webhook.send(
-            content=content.split("\u200b")[0],
-            username=db_user.display_name,
-            avatar_url=db_user.avatar_url,
-            thread=profile_thread,
-            wait=True,
-            view=SpellView(new_spell.id, interaction.client, "thread"),
-            embeds=[embed],
-            file=discord_file
-        )
-        feed_message = await webhook.send(
-            content=content.split("\u200b")[0],
-            username=db_user.display_name,
-            avatar_url=db_user.avatar_url,
-            wait=True,
-            view=SpellView(new_spell.id, interaction.client, "feed"),
-            embeds=[embed],
-            file=discord_file
-        )
+                    discord_file = discord.File(BytesIO(image_file.getvalue()), filename=filename)
+                    # image_bytes.seek(0)
+                    discord_file2 = discord.File(BytesIO(image_file.getvalue()), filename=filename)
+
+        if(discord_file):
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread"),
+                embeds=[embed],
+                file=discord_file
+            )
+            feed_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "feed"),
+                embeds=[embed],
+                file=discord_file2
+            )
+        else:
+            thread_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                thread=profile_thread,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "thread"),
+                embeds=[embed],
+            )
+            feed_message = await webhook.send(
+                content=content.split("\u200b")[0],
+                username=db_user.display_name,
+                avatar_url=db_user.avatar_url,
+                wait=True,
+                view=SpellView(new_spell.id, interaction.client, "feed"),
+                embeds=[embed],
+            )
 
         # update number button
         db_pondering_spell = interaction.client.db_session.get(Spell, self.pondering)
