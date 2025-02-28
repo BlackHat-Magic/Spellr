@@ -81,7 +81,37 @@ class FeedCog(commands.Cog):
 
     @app_commands.command(name="avatar")
     async def avatar(self, interaction: discord.Interaction, image_url: str):
-        pass
+        try:
+            self.require_feed(interaction)
+            self.require_account(interaction)
+        except app_commands.CheckFailure as e:
+            await interaction.response.send_message(e.args[0] if e.args else "You do not have permission to use this command.", ephemeral=True)
+            return
+        if(len(image_url) > 1024):
+            await interaction.followup.send(f"URL too long; max 1024 characters.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # pretty easy if user only has one account
+        db_accounts = interaction.extras["db_accounts"]
+        if(len(db_accounts) == 1):
+            db_accounts[0].avatar_url = image_url
+            try:
+                self.client.db_session.add(db_accounts[0])
+                self.client.db_session.commit()
+            except:
+                self.client.db_session.rollback()
+                await interaction.followup.send("A database error occured. Try again later.", ephemeral=True)
+                return
+            await db_accounts[0].update(interaction)
+            await interaction.followup.send(f"Avatar URL changed to {image_url}", ephemeral=True)
+            return
+        
+        # if user has multiple, we need a view
+        view = discord.ui.View()
+        view.add_item(AccountDropdown(db_accounts, "avatar_url", image_url))
+        await interaction.followup.send(f"Select an account to change avatar URL:", view=view, ephemeral=True)
 
     @app_commands.command()
     @app_commands.describe(account_property="Property of profile to change")

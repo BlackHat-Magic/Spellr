@@ -1,4 +1,5 @@
-import discord, random, re
+from io import BytesIO
+import discord, random, aiohttp, asyncio
 
 from models import Channel, User, Account, format_cast, Spell, format_recast, format_ponder
 
@@ -211,7 +212,7 @@ class Register(discord.ui.Modal):
         )
         channel_webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
         profile_message = await channel_webhook.send(
-            content=new_account.print_profile(interaction.client), 
+            content=new_account.print_profile(interaction.client).split("\u200b")[0], 
             username=new_account.display_name, 
             avatar_url=new_account.avatar_url, 
             thread=profile_thread,
@@ -417,14 +418,12 @@ class SpellView(discord.ui.View):
             ("scribe", "<:scribe:1344068996387049614>", str(spell.scribes))
         ]
         for action, emoji, label in actions:
-            self.add_item(SpellButton(castid, action, emoji, location, label))
+            self.add_item(SpellButton(castid, action, emoji, location, format_number(int(label))))
 
 class CastModal(discord.ui.Modal):
-    def __init__(self, accountid=None, recasting=None, pondering=None, *args, **kwargs):
+    def __init__(self, accountid=None, *args, **kwargs):
         super().__init__(title="Cast a spell!")
         self.accountid = accountid
-        self.recasting = recasting
-        self.pondering = pondering
         content = discord.ui.TextInput(
             label=f"Spell Content{' (Optional)' if self.pondering else ''}",
             style=discord.TextStyle.long,
@@ -462,7 +461,7 @@ class CastModal(discord.ui.Modal):
         profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
         new_spell = Spell(
             author=db_user,
-            content=self.children[0].value,
+            content=self.children[0].value.replace("\u200b", " "),
         )
         try:
             interaction.client.db_session.add(new_spell)
@@ -474,20 +473,35 @@ class CastModal(discord.ui.Modal):
         # reply
         content = await format_cast(db_user, self.children[0].value, interaction.client)
 
+        # file
+        discord_file = None
+        if(self.children[1].value):
+            async with self.client.http_session.get(self.children[1].value) as response:
+                if(response.status == 200):
+                    image_bytes = BytesIO(await response.read())
+                    content_disposition = response.headers.get("Content-Disposition")
+                    if(content_disposition and "filename=" in content_disposition):
+                        filename = content_disposition.split("filename=")[-1].strip("\"")
+                    else:
+                        filename = "image.png"
+                    discord_file = discord.File(image_bytes, filename=filename)
+
         thread_message = await webhook.send(
-            content=content,
+            content=content.split("\u200b")[0],
             username=db_user.display_name,
             avatar_url=db_user.avatar_url,
             thread=profile_thread,
             wait=True,
-            view=SpellView(new_spell.id, interaction.client, "thread")
+            view=SpellView(new_spell.id, interaction.client, "thread"),
+            file=discord_file
         )
         feed_message = await webhook.send(
-            content=content,
+            content=content.split("\u200b")[0],
             username=db_user.display_name,
             avatar_url=db_user.avatar_url,
             wait=True,
-            view=SpellView(new_spell.id, interaction.client, "feed")
+            view=SpellView(new_spell.id, interaction.client, "feed"),
+            file=discord_file
         )
         try:
             new_spell.thread_messageid = thread_message.id
@@ -540,7 +554,7 @@ class RecastModal(discord.ui.Modal):
         profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
         new_spell = Spell(
             author=db_user,
-            content=self.children[0].value,
+            content=self.children[0].value.replace("\u200b", " "),
         )
         try:
             interaction.client.db_session.add(new_spell)
@@ -572,14 +586,28 @@ class RecastModal(discord.ui.Modal):
             await interaction.followup.send("Too many replies on this spell (only 10 supported).", ephemeral=True, delete_after=15)
             return
 
+        # file
+        discord_file = None
+        if(self.children[1].value):
+            async with self.client.http_session.get(self.children[1].value) as response:
+                if(response.status == 200):
+                    image_bytes = BytesIO(await response.read())
+                    content_disposition = response.headers.get("Content-Disposition")
+                    if(content_disposition and "filename=" in content_disposition):
+                        filename = content_disposition.split("filename=")[-1].strip("\"")
+                    else:
+                        filename = "image.png"
+                    discord_file = discord.File(image_bytes, filename=filename)
+
         # send the profile message
         thread_message = await webhook.send(
-            content=content,
+            content=content.split("\u200b")[0],
             username=db_user.display_name,
             avatar_url=db_user.avatar_url,
             thread=profile_thread,
             wait=True,
-            view=SpellView(new_spell.id, interaction.client, "thread")
+            view=SpellView(new_spell.id, interaction.client, "thread"),
+            file=discord_file
         )
         new_spell.thread_messageid = thread_message.id
 
@@ -591,33 +619,36 @@ class RecastModal(discord.ui.Modal):
         print(db_recasting_spell.recasts)
         for i, recast in enumerate(db_recasting_spell.recasts):
             from_channel = await interaction.client.fetch_channel(recast.author.profile_threadid)
-            print(recast.thread_messageid)
             recast_message = await from_channel.fetch_message(recast.thread_messageid)
             recast_profile = await from_channel.fetch_message(recast.author.profile_messageid)
             embed = discord.Embed(
                 color=discord.Colour(0x00FFFF),
                 title=f"({i+1}) {recast.author.display_name}",
                 url=recast_message.jump_url,
-                description=recast.content
+                description=recast.content.split("\u200b")[0]
             )
             embed.set_author(
                 name=f"@{recast.author.handle}",
                 url=recast_profile.jump_url,
                 icon_url=db_user.avatar_url
             )
+            if(len(db_pondering_spell.content.split("\u200b")) == 2):
+                embed.set_image(db_pondering_spell.content.split("\u200b")[1])
             embeds.append(embed)
         profile_message = await webhook.fetch_message(db_user.profile_messageid, thread=profile_thread)
         embed = discord.Embed(
             color=discord.Colour(0x00FFFF),
             title=f"({len(db_recasting_spell.recasts)}) {db_user.display_name}",
             url=thread_message.jump_url,
-            description=self.children[0].value
+            description=self.children[0].value.replace("\u200b", " ")
         )
         embed.set_author(
             name=f"@{db_user.handle}",
             url=profile_message.jump_url,
             icon_url=db_user.avatar_url
         )
+        if(len(db_pondering_spell.content.split("\u200b")) == 2):
+            embed.set_image(db_pondering_spell.content.split("\u200b")[1])
         embeds.append(embed)
 
         # add to thread message
@@ -688,7 +719,7 @@ class PonderModal(discord.ui.Modal):
         profile_thread = await interaction.client.fetch_channel(db_user.profile_threadid)
         new_spell = Spell(
             author=db_user,
-            content=self.children[0].value,
+            content=self.children[0].value.replace("\u200b", " "),
         )
         try:
             interaction.client.db_session.add(new_spell)
@@ -701,22 +732,37 @@ class PonderModal(discord.ui.Modal):
         # get parent information
         content, embed = await format_ponder(db_user, interaction, self.children[0].value, new_spell, self.pondering)
 
+        # file
+        discord_file = None
+        if(self.children[1].value):
+            async with self.client.http_session.get(self.children[1].value) as response:
+                if(response.status == 200):
+                    image_bytes = BytesIO(await response.read())
+                    content_disposition = response.headers.get("Content-Disposition")
+                    if(content_disposition and "filename=" in content_disposition):
+                        filename = content_disposition.split("filename=")[-1].strip("\"")
+                    else:
+                        filename = "image.png"
+                    discord_file = discord.File(image_bytes, filename=filename)
+
         thread_message = await webhook.send(
-            content=content,
+            content=content.split("\u200b")[0],
             username=db_user.display_name,
             avatar_url=db_user.avatar_url,
             thread=profile_thread,
             wait=True,
             view=SpellView(new_spell.id, interaction.client, "thread"),
-            embeds=[embed]
+            embeds=[embed],
+            file=discord_file
         )
         feed_message = await webhook.send(
-            content=content,
+            content=content.split("\u200b")[0],
             username=db_user.display_name,
             avatar_url=db_user.avatar_url,
             wait=True,
             view=SpellView(new_spell.id, interaction.client, "feed"),
-            embeds=[embed]
+            embeds=[embed],
+            file=discord_file
         )
 
         # update number button
@@ -768,9 +814,14 @@ class AccountDropdown(discord.ui.Select):
         old_handle = db_account.handle
         
         setattr(db_account, self.what.replace(" ", "_"), self.new_value)
-        interaction.client.db_session.add(db_account)
-        interaction.client.db_session.commit()
-        await db_account.update(interaction)
+        try:
+            interaction.client.db_session.add(db_account)
+            interaction.client.db_session.commit()
+            await db_account.update(interaction)
+        except:
+            db.session.rollback()
+            await interaction.followup.send("A database error occurred. Try again later.", ephemeral=True)
+            return
         await interaction.followup.send(f"Changed @{old_handle}'s {self.what_name} to {self.new_value}.", ephemeral=True, delete_after=15)
 
 class CastDropdown(discord.ui.Select):

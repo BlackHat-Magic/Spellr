@@ -1,7 +1,7 @@
 from discord.ext import commands
 from feed_cog import FeedCog
 from dotenv import load_dotenv
-import discord, os, sys
+import discord, os, sys, aiohttp
 from ui_utils import SpellView
 
 from models import User, create_database, Spell
@@ -38,6 +38,7 @@ async def on_ready():
             session.add(new_user)
             session.commit()
         client.db_session = session
+        client.http_session = aiohttp.ClientSession()
 
         # persistent views
         spells = session.query(Spell).all()
