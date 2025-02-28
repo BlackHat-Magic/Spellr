@@ -161,7 +161,7 @@ class Account(Base):
         # update the profile
         await profile_webhook.edit_message(
             self.profile_messageid, 
-            content=self.print_profile(), 
+            content=self.print_profile(interaction.client), 
             thread=profile_thread
         )
         await profile_thread.edit(name=f"{self.display_name}'s Profile")
@@ -183,19 +183,19 @@ class Account(Base):
                 spell.feed_messageid = edited_feed_message.id
 
 
-    def print_profile(self):
+    def print_profile(self, client):
         result = f"# {self.display_name}"
         result += f"\n-# @{self.handle}"
         if(self.bio):
             result += f"\n{self.bio}"
         result += "\n-# "
         if(self.location):
-            result += f"<:location:1344069387333926992> {self.location} | "
-        result += f"<:website:1344069349325013057> [{self.website}](https://{self.website}) | "
+            result += f"{client.emoji["location"]} {self.location} | "
+        result += f"{client.emoji["website"]} [{self.website}](https://{self.website}) | "
         if(self.bday and self.bmonth and self.byear):
-            result += f"<:birthday:1344068939126149130> {month_list[int(self.bmonth)]} {self.bday}, {self.byear} | "
+            result += f"{client.emoji["birthday"]} {month_list[int(self.bmonth)]} {self.bday}, {self.byear} | "
         if(self.jmonth and self.jyear):
-            result += f"<:joined:1344069033342927059> Joined {month_list[self.jmonth]} {self.jyear}"
+            result += f"{client.emoji["join"]} Joined {month_list[self.jmonth]} {self.jyear}"
         result += f"\n-# **{self.following}** Following | **{self.followers}** Followers"
         return(result)
 

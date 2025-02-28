@@ -211,7 +211,7 @@ class Register(discord.ui.Modal):
         )
         channel_webhook = await interaction.client.fetch_webhook(db_channel.webhookid)
         profile_message = await channel_webhook.send(
-            content=new_account.print_profile(), 
+            content=new_account.print_profile(interaction.client), 
             username=new_account.display_name, 
             avatar_url=new_account.avatar_url, 
             thread=profile_thread,
@@ -301,16 +301,16 @@ class SpellButton(
         spell = interaction.client.db_session.get(Spell, castid)
         action = match["action"]
         if(action == "recast"):
-            emoji = "<:recast:1344069245918773288>"
+            emoji = interaction.client.emoji["recast"]
             label = format_number(len(spell.recasts))
         elif(action == "ponder"):
-            emoji = "<:ponder:1344068886588555397>"
+            emoji = interaction.client.emoji["ponder"]
             label = format_number(len(spell.ponders))
         elif(action == "charm"):
-            emoji = "<:charm:1344068841973612644>"
+            emoji = interaction.client.emoji["charm"]
             label = format_number(spell.charms)
         else:
-            emoji = "<:scribe:1344068996387049614>"
+            emoji = interaction.client.emoji["scribe"]
             label = format_number(spell.scribes)
         location = match["location"]
         return(cls(castid, action, emoji, location, label))

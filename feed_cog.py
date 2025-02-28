@@ -79,6 +79,10 @@ class FeedCog(commands.Cog):
         
         await interaction.followup.send("New Spellr feed created.", ephemeral=True)
 
+    @app_commands.command(name="avatar")
+    async def avatar(self, interaction: discord.Interaction, image_url: str):
+        pass
+
     @app_commands.command()
     @app_commands.describe(account_property="Property of profile to change")
     @app_commands.choices(
