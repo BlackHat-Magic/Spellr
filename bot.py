@@ -46,17 +46,18 @@ async def on_ready():
             if(spell.feed_messageid):
                 client.add_view(SpellView(spell.id, client, "feed"))
         
-        client.emojis = {}
-        client.emojis["share"] = SHARE_EMOJI_MARKDOWN
-        client.emojis["location"] = LOCATION_EMOJI_MARKDOWN
-        client.emojis["website"] = WEBSITE_EMOJI_MARKDOWN
-        client.emojis["charm"] = CHARM_EMOJI_MARKDOWN
-        client.emojis["recast"] = RECAST_EMOJI_MARKDOWN
-        client.emojis["analytics"] = ANALYTICS_EMOJI_MARKDOWN
-        client.emojis["join"] = JOIN_EMOJI_MARKDOWN
-        client.emojis["scribe"] = SCRIBE_EMOJI_MARKDOWN
-        client.emojis["birthday"] = BIRTHDAY_EMOJI_MARKDOWN
-        client.emojis["ponder"] = PONDER_EMOJI_MARKDOWN
+        client.emojis = {
+            "share": SHARE_EMOJI_MARKDOWN,
+            "location": LOCATION_EMOJI_MARKDOWN,
+            "website": WEBSITE_EMOJI_MARKDOWN,
+            "charm": CHARM_EMOJI_MARKDOWN,
+            "recast": RECAST_EMOJI_MARKDOWN,
+            "analytics": ANALYTICS_EMOJI_MARKDOWN,
+            "join": JOIN_EMOJI_MARKDOWN,
+            "scribe": SCRIBE_EMOJI_MARKDOWN,
+            "birthday": BIRTHDAY_EMOJI_MARKDOWN,
+            "ponder": PONDER_EMOJI_MARKDOWN,
+        }
 
         # add cog
         await client.add_cog(FeedCog(client))
