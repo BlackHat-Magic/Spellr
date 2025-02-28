@@ -100,7 +100,7 @@ async def format_ponder(db_account, interaction, text, new_spell, pondering):
 
     if(len(db_pondering_spell.content.split("\u200b")) == 2):
         ponder_preview.set_image(db_pondering_spell.content.split("\u200b")[1])
-        
+
     ponder_preview.url = pondering_link
     ponder_preview.color = discord.Colour(0x2b2d31)
     if(db_pondering_spell.pondering_to):
@@ -166,68 +166,72 @@ class Account(Base):
         edited_profile_message = await webhook.edit_message(
             self.profile_messageid, 
             content=self.print_profile(interaction.client), 
-            thread=profile_thread
+            thread=profile_thread,
         )
         self.profile_messageid = edited_profile_message.id
-        db.session.add(self)
+        interaction.client.db_session.add(self)
         await profile_thread.edit(name=f"{self.display_name}'s Profile")
 
+        pondering_embed = None
+
         # each spell that ponders this spell
-        for spell in self.spells:
-            pondered_by = interaction.client.db_session.query(Spell).filter_by(pondering_to=self).all()
-            if(pondered_by):
-                _, pondering_embed = await format_ponder(self, interaction, "", spell, spell.pondering_id)
-                embeds.append(pondering_embed)
-            for ponder in pondered_by:
-                pondering_embeds = [embeds[0]]
-                for recast in ponder.recasts:
-                    recast_thread = await interaction.client.fetch_channel(recast.author.profile_threadid)
-                    recast_thread_message = await ponder_thread.fetch_message(recast.thread_messageid)
-                    recast_profile = await ponder_thread.fetch_message(recast.author.profile_messageid)
-                    embed = discord.Embed(
-                        color=discord.Colout(0x00FFFF),
-                        title=f"({i+1}) {recast.author.display_name}",
-                        url=recast_message.jump_url,
-                        description=recast.content
-                    )
-                    embed.set_author(
-                        name=f"@{recast.author.handle}",
-                        url=recast_profile.jump_url,
-                        icon_url=db_user.avatar_url
-                    )
-                    pondering_embeds.append(embed)
-                ponder_thread = await interaction.client.fetch_channel(ponder.author.profile_threadid)
-                ponder_thread_message = await ponder_thread.fetch_message(ponder.thread_messageid)
-                edited_ponder_thread_message = await webhook.edit_message(
-                    ponder_thread_message.id,
-                    embeds=pondering_embeds,
-                    thread=ponder_thread
+        for ponder in interaction.client.db_session.query(Spell).all():
+            if(not ponder.pondering_to or ponder.pondering_to.author != self):
+                continue
+            _, pondering_embed = await format_ponder(self, interaction, "", ponder, ponder.pondering_id)
+            pondering_embeds = [pondering_embed]
+            for recast in ponder.recasts:
+                recast_thread = await interaction.client.fetch_channel(recast.author.profile_threadid)
+                recast_thread_message = await recast_thread.fetch_message(recast.thread_messageid)
+                recast_profile = await recast_thread.fetch_message(recast.author.profile_messageid)
+                embed = discord.Embed(
+                    color=discord.Colour(0x00FFFF),
+                    title=f"{recast.author.display_name}",
+                    url=recast_thread_message.jump_url,
+                    description=recast.content
                 )
-                ponder.thread_messageid = edited_ponder_thread_message.id
-                if(ponder.feed_messageid):
-                    ponder_feed = await ineraction.client.fetch_channel(ponder.author.channel.id)
-                    ponder_feed_message = await ponder_feed.fetch_message(ponder.feed_messageid)
-                    edited_ponder_feed_message = await webhook.edit_message(
-                        ponder_feed_message.id,
-                        embeds=pondering_embeds
-                    )
-                    ponder.feed_messageid = edited_ponder_feed_message
-                db.session.add(ponder)
+                embed.set_author(
+                    name=f"@{recast.author.handle}",
+                    url=recast_profile.jump_url,
+                    icon_url=recast.author.avatar_url
+                )
+                pondering_embeds.append(embed)
+            ponder_thread = await interaction.client.fetch_channel(ponder.author.profile_threadid)
+            ponder_thread_message = await ponder_thread.fetch_message(ponder.thread_messageid)
+            edited_ponder_thread_message = await webhook.edit_message(
+                ponder_thread_message.id,
+                embeds=pondering_embeds,
+                thread=ponder_thread
+            )
+            ponder.thread_messageid = edited_ponder_thread_message.id
+            if(ponder.feed_messageid):
+                ponder_feed = await interaction.client.fetch_channel(ponder.author.channel.id)
+                ponder_feed_message = await ponder_feed.fetch_message(ponder.feed_messageid)
+                edited_ponder_feed_message = await webhook.edit_message(
+                    ponder_feed_message.id,
+                    embeds=pondering_embeds
+                )
+                ponder.feed_messageid = edited_ponder_feed_message.id
+            interaction.client.db_session.add(ponder)
             
         # update all spells where this is in the recasts
         recasts = []
-        for spell in self.spells:
-            if(spell.recasting_to):
-                recasts.append(spell.recasting_to)
+        for spell in interaction.client.db_session.query(Spell).all():
+            for recast in spell.recasts:
+                if(recast.author == self):
+                    recasts.append(recast)
         for recast in recasts:
             recast_embeds = []
+            if(recast.pondering_to):
+                _, pondering_embed = await format_ponder(recast.author, interaction, "", recast, recast.pondering_id)
+                recast_embeds.append(pondering_embed)
             for reply in recast.recasts:
                 reply_thread = await interaction.client.fetch_channel(reply.author.profile_threadid)
                 reply_thread_message = await reply_thread.fetch_message(reply.thread_messageid)
                 reply_profile = await reply_thread.fetch_message(reply.author.profile_messageid)
                 embed = discord.Embed(
-                    color=discord.Colout(0x00FFFF),
-                    title=f"({i+1}) {reply.author.display_name}",
+                    color=discord.Colour(0x00FFFF),
+                    title=f"{reply.author.display_name}",
                     url=reply_thread_message.jump_url,
                     description=reply.content
                 )
@@ -246,17 +250,17 @@ class Account(Base):
             )
             recast.thread_messageid = edited_recast_thread_message.id
             if(recast.feed_messageid):
-                recast_feed = await interaction.client.fecth_channel(recast.author.channel.id)
+                recast_feed = await interaction.client.fetch_channel(recast.author.channel.id)
                 recast_feed_message = await recast_feed.fetch_message(recast.feed_messageid)
                 edited_recast_feed_message = await webhook.edit_message(
                     recast_feed_message.id,
-                    embeds=embeds
+                    embeds=recast_embeds
                 )
                 recast.feed_messageid = edited_recast_feed_message.id
-            db.session.add(recast)
+            interaction.client.db_session.add(recast)
         # yes, this should be in a try/except block
         # no, I will not fix it; I have god on my side.
-        db.session.commit()
+        interaction.client.db_session.commit()
 
     def print_profile(self, client):
         result = f"# {self.display_name}"

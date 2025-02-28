@@ -48,6 +48,7 @@ def format_number(number):
         "Dc"
     ]
     result = str(round(number, 1)) + order_list[order]
+    return(result)
 
 class Register(discord.ui.Modal):
     def __init__(self, *args, **kwargs):
@@ -350,7 +351,8 @@ class SpellButton(
         # liking
         if(self.action == "charm"):
             spell = interaction.client.db_session.get(Spell, self.castid)
-            spell.charms += 1
+            charms_to_add = random.randint(1, (max(spell.author.followers // 100, 1)))
+            spell.charms += charms_to_add
 
             # some stuff
             webhook = await interaction.client.fetch_webhook(spell.author.channel.webhookid)
@@ -380,7 +382,8 @@ class SpellButton(
         # bookmarking
         if(self.action == "scribe"):
             spell = interaction.client.db_session.get(Spell, self.castid)
-            spell.scribes += 1
+            scribes_to_add = random.randint(1, (max(spell.author.followers // 200, 1)))
+            spell.scribes += scribes_to_add
 
             # webhook
             webhook = await interaction.client.fetch_webhook(spell.author.channel.webhookid)
@@ -662,7 +665,7 @@ class RecastModal(discord.ui.Modal):
             recast_profile = await from_channel.fetch_message(recast.author.profile_messageid)
             embed = discord.Embed(
                 color=discord.Colour(0x00FFFF),
-                title=f"({i+1}) {recast.author.display_name}",
+                title=f"{recast.author.display_name}",
                 url=recast_message.jump_url,
                 description=recast.content.split("\u200b")[0]
             )
