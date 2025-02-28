@@ -301,16 +301,16 @@ class SpellButton(
         spell = interaction.client.db_session.get(Spell, castid)
         action = match["action"]
         if(action == "recast"):
-            emoji = interaction.client.emoji["recast"]
+            emoji = interaction.client.my_emojis["recast"]
             label = format_number(len(spell.recasts))
         elif(action == "ponder"):
-            emoji = interaction.client.emoji["ponder"]
+            emoji = interaction.client.my_emojis["ponder"]
             label = format_number(len(spell.ponders))
         elif(action == "charm"):
-            emoji = interaction.client.emoji["charm"]
+            emoji = interaction.client.my_emojis["charm"]
             label = format_number(spell.charms)
         else:
-            emoji = interaction.client.emoji["scribe"]
+            emoji = interaction.client.my_emojis["scribe"]
             label = format_number(spell.scribes)
         location = match["location"]
         return(cls(castid, action, emoji, location, label))

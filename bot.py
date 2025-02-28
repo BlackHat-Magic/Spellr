@@ -46,7 +46,7 @@ async def on_ready():
             if(spell.feed_messageid):
                 client.add_view(SpellView(spell.id, client, "feed"))
         
-        client.emojis = {
+        client.my_emojis = {
             "share": SHARE_EMOJI_MARKDOWN,
             "location": LOCATION_EMOJI_MARKDOWN,
             "website": WEBSITE_EMOJI_MARKDOWN,

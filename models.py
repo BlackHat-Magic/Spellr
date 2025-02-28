@@ -190,12 +190,12 @@ class Account(Base):
             result += f"\n{self.bio}"
         result += "\n-# "
         if(self.location):
-            result += f"{client.emoji["location"]} {self.location} | "
-        result += f"{client.emoji["website"]} [{self.website}](https://{self.website}) | "
+            result += f"{client.my_emojis["location"]} {self.location} | "
+        result += f"{client.my_emojis["website"]} [{self.website}](https://{self.website}) | "
         if(self.bday and self.bmonth and self.byear):
-            result += f"{client.emoji["birthday"]} {month_list[int(self.bmonth)]} {self.bday}, {self.byear} | "
+            result += f"{client.my_emojis["birthday"]} {month_list[int(self.bmonth)]} {self.bday}, {self.byear} | "
         if(self.jmonth and self.jyear):
-            result += f"{client.emoji["join"]} Joined {month_list[self.jmonth]} {self.jyear}"
+            result += f"{client.my_emojis["join"]} Joined {month_list[self.jmonth]} {self.jyear}"
         result += f"\n-# **{self.following}** Following | **{self.followers}** Followers"
         return(result)
 
