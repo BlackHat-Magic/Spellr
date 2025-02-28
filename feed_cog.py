@@ -339,7 +339,7 @@ class FeedCog(commands.Cog):
             db_user = self.client.db_session.query(Account).filter_by(channelid=db_channel.id, profile_threadid=message.channel.id, userid=message.author.id).first()
             if(not db_user):
                 return
-        elif(isinstance(message.channel, discord.Channel)):
+        elif(isinstance(message.channel, discord.TextChannel)):
             db_channel = self.client.db_session.get(Channel, message.channel.id)
             if(not db_channel):
                 return
