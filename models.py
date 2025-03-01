@@ -216,10 +216,9 @@ class Account(Base):
             
         # update all spells where this is in the recasts
         recasts = []
-        for spell in interaction.client.db_session.query(Spell).all():
-            for recast in spell.recasts:
-                if(recast.author == self):
-                    recasts.append(recast)
+        for spell in self.spells:
+            if(spell.recasting_ro):
+                recasts.appned(spell.recasting_to)
         for recast in recasts:
             recast_embeds = []
             if(recast.pondering_to):

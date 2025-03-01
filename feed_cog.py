@@ -36,10 +36,13 @@ class FeedCog(commands.Cog):
             raise app_commands.CheckFailure("You don't have any registered accounts in this feed to change. Use `/register` to register one.")
         interaction.extras["db_accounts"] = db_accounts
     
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.has_permissions(manage_channels=True)
     @app_commands.command(name="setup")
     async def setup(self, interaction: discord.Interaction):
         # check if this is a valid channel
+        if(not interaction.user.guild_permissions.manage_channels):
+            await interaction.response.send_message("Insufficient permissions")
+            return
         if(not isinstance(interaction.channel, discord.TextChannel)):
             await interaction.response.send_message("Spellr must be set up in a channel; not a DM or a Thread.", ephemeral=True, delete_after=30)
             return
