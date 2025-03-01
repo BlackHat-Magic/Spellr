@@ -218,7 +218,7 @@ class Account(Base):
         recasts = []
         for spell in self.spells:
             if(spell.recasting_to):
-                recasts.appned(spell.recasting_to)
+                recasts.append(spell.recasting_to)
         for recast in recasts:
             recast_embeds = []
             if(recast.pondering_to):
