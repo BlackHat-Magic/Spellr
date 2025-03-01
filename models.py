@@ -217,7 +217,7 @@ class Account(Base):
         # update all spells where this is in the recasts
         recasts = []
         for spell in self.spells:
-            if(spell.recasting_ro):
+            if(spell.recasting_to):
                 recasts.appned(spell.recasting_to)
         for recast in recasts:
             recast_embeds = []
