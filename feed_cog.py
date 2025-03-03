@@ -36,6 +36,10 @@ class FeedCog(commands.Cog):
             raise app_commands.CheckFailure("You don't have any registered accounts in this feed to change. Use `/register` to register one.")
         interaction.extras["db_accounts"] = db_accounts
     
+    @app_commands.command(name="attachment")
+    async def attachment(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Upload an attachment here to get a permanent link: https://upload.bhm.gg?reason=Spellr", ephemeral=True)
+
     # @app_commands.has_permissions(manage_channels=True)
     @app_commands.command(name="setup")
     async def setup(self, interaction: discord.Interaction):
