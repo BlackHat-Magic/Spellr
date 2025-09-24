@@ -1,0 +1,10 @@
+.dockerignore
+README.md
+LICENSE.md
+.git
+.gitignore
+env/
+__pycache__/
+.env.example
+.env
+database.db
