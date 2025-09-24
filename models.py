@@ -6,7 +6,12 @@ import os, discord
 
 load_dotenv()
 
-DATABASE_NAME = os.getenv("SQLITE_DATABASE_NAME")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+
 month_list = [
     None,
     "January",
@@ -299,7 +304,7 @@ class Spell(Base):
     ponders = relationship("Spell", back_populates="pondering_to", foreign_keys=[pondering_id])
 
 def create_database():
-    database = create_engine(f"sqlite:///{DATABASE_NAME}")
+    database = create_engine(f"postgresql:///{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
     Base.metadata.create_all(database)
     Session = sessionmaker(bind=database)
     session = Session()
