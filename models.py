@@ -304,7 +304,7 @@ class Spell(Base):
     ponders = relationship("Spell", back_populates="pondering_to", foreign_keys=[pondering_id])
 
 def create_database():
-    database = create_engine(f"postgresql:///{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
+    database = create_engine(f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
     Base.metadata.create_all(database)
     Session = sessionmaker(bind=database)
     session = Session()
